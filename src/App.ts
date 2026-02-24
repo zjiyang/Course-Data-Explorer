@@ -13,12 +13,6 @@ export type Application = ReturnType<typeof express>;
  * Configuration options for the application.
  */
 export type AppConfig = {
-	/**
-	 * The directory where application data will be stored enabling the application to persist data between restarts.
-	 *
-	 * @internal
-	 * During autograding, the directory will be deleted as a means to reset the application data between tests.
-	 */
 	readonly datadir: string;
 };
 
@@ -30,23 +24,15 @@ export async function createApp(config: AppConfig): Promise<Application> {
 
 	const { datadir } = config;
 
-	// Ensure the data directory exists
 	await fs.mkdir(datadir, { recursive: true });
 
-	// Configure multer to store file contents in memory
 	const upload = multer({ storage: multer.memoryStorage() });
 
-	// Make files in ../frontend/public accessible at http://localhost:<port>/
 	app.use(express.static("frontend/public"));
-
-	// Register middleware to parse request before passing them to request handlers
-	// Note: JSON parser must be place before raw parser because of wildcard matching done by raw parser below
 	app.use(express.json());
 	app.use(express.raw({ type: "application/*", limit: "10mb" }));
 	app.use(cors());
 
-	// Basic message to verify REST API is available
-	// You can see the message by going to http://localhost:<port>/api
 	app.get("/api", (_req, res) => {
 		res.send("App is running!");
 	});
@@ -75,7 +61,6 @@ export async function createApp(config: AppConfig): Promise<Application> {
 
 		await model.createDatasetJob(id);
 
-		// POST response message is spec'd as "Dataset accepted for processing"
 		res.status(202).send({
 			id,
 			status: "processing",
@@ -87,9 +72,10 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		setImmediate(async () => {
 			try {
 				const zip = await JSZip.loadAsync(req.file!.buffer);
-
 				const fileNames = Object.keys(zip.files);
-				const hasCoursesDir = fileNames.some((n) => n.startsWith("courses/"));
+				const hasCoursesDir =
+					zip.files["courses/"]?.dir === true || fileNames.some((n) => n.startsWith("courses/") && n !== "courses/");
+
 				if (!hasCoursesDir) {
 					await model.failDatasetJob(id, "Missing root courses directory");
 					return;
@@ -117,7 +103,6 @@ export async function createApp(config: AppConfig): Promise<Application> {
 	// ----------------------------
 
 	app.post("/api/v1/search", async (req, res) => {
-		// 422 request body validation
 		const fields: Record<string, string> = {};
 
 		if (!req.body || typeof req.body !== "object" || req.body === null) {
@@ -132,8 +117,9 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		else if (req.body.kind !== "course_offerings") fields.kind = "expected to be course_offerings";
 
 		if (req.body.query === undefined) fields.query = "required but missing";
-		else if (typeof req.body.query !== "object" || req.body.query === null || Array.isArray(req.body.query))
+		else if (typeof req.body.query !== "object" || req.body.query === null || Array.isArray(req.body.query)) {
 			fields.query = "expected an object";
+		}
 
 		if (Object.keys(fields).length > 0) {
 			res.status(422).send({ error: "Validation failed", fields });
@@ -148,9 +134,21 @@ export async function createApp(config: AppConfig): Promise<Application> {
 			return;
 		}
 
+		if (q.WHERE === null || typeof q.WHERE !== "object" || Array.isArray(q.WHERE) || Object.keys(q.WHERE).length > 1) {
+			res.status(400).send({ error: "Invalid query", message: "WHERE must be an object with at most one FILTER" });
+			return;
+		}
+
 		// Need OPTIONS
-		if (q.OPTIONS === undefined || typeof q.OPTIONS !== "object" || q.OPTIONS === null) {
+		if (q.OPTIONS === undefined) {
 			res.status(400).send({ error: "Invalid query", message: "Missing OPTIONS" });
+			return;
+		}
+
+		if (q.OPTIONS === null || typeof q.OPTIONS !== "object" || Array.isArray(q.OPTIONS)) {
+			res
+				.status(400)
+				.send({ error: "Invalid query", message: "OPTIONS must be an object with COLUMNS and optional ORDER" });
 			return;
 		}
 
@@ -175,7 +173,7 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		// ORDER must be in COLUMNS (if present)
 		if (q.OPTIONS.ORDER !== undefined) {
 			if (typeof q.OPTIONS.ORDER !== "string" || !q.OPTIONS.COLUMNS.includes(q.OPTIONS.ORDER)) {
-				res.status(400).send({ error: "Invalid query", message: "ORDER key must be in COLUMNS" });
+				res.status(400).send({ error: "Invalid query", message: "ORDER must be a key in COLUMNS" });
 				return;
 			}
 		}
@@ -196,7 +194,7 @@ export async function createApp(config: AppConfig): Promise<Application> {
 	});
 
 	// ----------------------------
-	// Courses
+	// Courses (unchanged logic)
 	// ----------------------------
 
 	app.get("/api/v1/courses", async (req, res) => {
@@ -315,7 +313,7 @@ export async function createApp(config: AppConfig): Promise<Application> {
 	});
 
 	// ----------------------------
-	// Sections
+	// Sections (unchanged logic)
 	// ----------------------------
 
 	app.get("/api/v1/courses/:course/sections", async (req, res) => {
@@ -408,12 +406,14 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		else if (typeof req.body.instructor !== "string") fields.instructor = "expected a string";
 
 		if (req.body.year === undefined) fields.year = "required but missing";
-		else if (!Number.isInteger(req.body.year) || req.body.year < 1900 || req.body.year > 2099)
+		else if (!Number.isInteger(req.body.year) || req.body.year < 1900 || req.body.year > 2099) {
 			fields.year = "expected a number between 1900 and 2099";
+		}
 
 		if (req.body.avg === undefined) fields.avg = "required but missing";
-		else if (typeof req.body.avg !== "number" || req.body.avg < 0 || req.body.avg > 100)
+		else if (typeof req.body.avg !== "number" || req.body.avg < 0 || req.body.avg > 100) {
 			fields.avg = "expected a number between 0 and 100";
+		}
 
 		if (req.body.pass === undefined) fields.pass = "required but missing";
 		else if (!Number.isInteger(req.body.pass) || req.body.pass < 0) fields.pass = "expected a number >= 0";
@@ -694,7 +694,6 @@ class Model {
 		const courseFiles = Object.keys(zip.files).filter((n) => n.startsWith("courses/") && !zip.files[n].dir);
 		stats.files_total = courseFiles.length;
 
-		// First pass: read/parse files, collect valid offering records (so we can do "courses before sections")
 		type Offering = {
 			id: string;
 			Course: string;
@@ -711,11 +710,15 @@ class Model {
 
 		const offerings: Offering[] = [];
 
-		// For "most recent offering's Title" per course
 		const maxYear: Record<string, number> = {};
 		const maxTitle: Record<string, string> = {};
 		const deptByCourse: Record<string, string> = {};
 		const codeByCourse: Record<string, string> = {};
+
+		const toNum = (x: any): number | null => {
+			const n = typeof x === "number" ? x : typeof x === "string" ? Number(x) : NaN;
+			return Number.isFinite(n) ? n : null;
+		};
 
 		for (const fname of courseFiles) {
 			let text: string;
@@ -742,7 +745,6 @@ class Model {
 			stats.files_processed++;
 
 			for (const r of obj.result) {
-				// required fields + expected types
 				if (
 					!r ||
 					typeof r !== "object" ||
@@ -752,35 +754,52 @@ class Model {
 					typeof r.Professor !== "string" ||
 					typeof r.Subject !== "string" ||
 					typeof r.Section !== "string" ||
-					typeof r.Year !== "string" ||
-					typeof r.Avg !== "number" ||
-					typeof r.Pass !== "number" ||
-					typeof r.Fail !== "number" ||
-					typeof r.Audit !== "number"
+					typeof r.Year !== "string"
 				) {
-					continue; // skip record
+					continue;
 				}
 
-				const yearNum = Number(r.Year);
-				if (!Number.isFinite(yearNum)) continue;
+				const yearNum = toNum(r.Year);
+				const avgNum = toNum(r.Avg);
+				const passNum = toNum(r.Pass);
+				const failNum = toNum(r.Fail);
+				const auditNum = toNum(r.Audit);
 
-				const courseId = `${r.Subject}${r.Course}`;
+				if (yearNum === null || avgNum === null || passNum === null || failNum === null || auditNum === null) {
+					continue;
+				}
+				if (!Number.isInteger(passNum) || !Number.isInteger(failNum) || !Number.isInteger(auditNum)) {
+					continue;
+				}
 
-				// mapping dept/code
-				deptByCourse[courseId] = r.Subject;
-				codeByCourse[courseId] = r.Course;
+				const normalized: Offering = {
+					id: r.id,
+					Course: r.Course,
+					Title: r.Title,
+					Professor: r.Professor,
+					Subject: r.Subject,
+					Section: r.Section,
+					Year: r.Year,
+					Avg: avgNum,
+					Pass: passNum,
+					Fail: failNum,
+					Audit: auditNum,
+				};
 
-				// most recent title by Year
+				const courseId = `${normalized.Subject}${normalized.Course}`;
+
+				deptByCourse[courseId] = normalized.Subject;
+				codeByCourse[courseId] = normalized.Course;
+
 				if (maxYear[courseId] === undefined || yearNum > maxYear[courseId]) {
 					maxYear[courseId] = yearNum;
-					maxTitle[courseId] = r.Title;
+					maxTitle[courseId] = normalized.Title;
 				}
 
-				offerings.push(r as Offering);
+				offerings.push(normalized);
 			}
 		}
 
-		// Second pass: upsert courses (courses before sections)
 		for (const courseId of Object.keys(deptByCourse)) {
 			stats.courses_seen++;
 
@@ -788,7 +807,7 @@ class Model {
 				id: courseId,
 				dept: deptByCourse[courseId],
 				code: codeByCourse[courseId],
-				title: maxTitle[courseId] ?? "", // should exist if we saw any valid record
+				title: maxTitle[courseId] ?? "",
 			};
 
 			const existing = this.data.courses[courseId];
@@ -799,7 +818,6 @@ class Model {
 			} else {
 				const changed =
 					existing.dept !== desired.dept || existing.code !== desired.code || existing.title !== desired.title;
-
 				if (changed) {
 					this.data.courses[courseId] = desired;
 					stats.courses_modified++;
@@ -808,11 +826,8 @@ class Model {
 			}
 		}
 
-		// Third pass: upsert sections
 		for (const r of offerings) {
 			const courseId = `${r.Subject}${r.Course}`;
-
-			// parent course must exist; if somehow missing, skip section
 			if (!this.data.courses[courseId]) continue;
 
 			stats.sections_seen++;
@@ -893,20 +908,52 @@ class Model {
 	}
 
 	private applyWhere(records: any[], where: any): any[] {
-		if (!where || typeof where !== "object") return [];
+		if (where === undefined) return [];
+		if (where === null || typeof where !== "object" || Array.isArray(where)) return [];
+
 		const keys = Object.keys(where);
 		if (keys.length === 0) return records;
+		if (keys.length > 1) return [];
 
 		const op = keys[0];
 		const body = where[op];
 
+		const keyOf = (r: any) => JSON.stringify(r);
+
+		if (op === "AND" || op === "OR") {
+			if (!Array.isArray(body) || body.length === 0) return [];
+			const parts = body.map((sub) => this.applyWhere(records, sub));
+
+			if (op === "AND") {
+				let set = new Set(parts[0].map(keyOf));
+				for (let i = 1; i < parts.length; i++) {
+					const next = new Set(parts[i].map(keyOf));
+					set = new Set([...set].filter((k) => next.has(k)));
+				}
+				return records.filter((r) => set.has(keyOf(r)));
+			} else {
+				const set = new Set<string>();
+				for (const p of parts) for (const r of p) set.add(keyOf(r));
+				return records.filter((r) => set.has(keyOf(r)));
+			}
+		}
+
+		if (op === "NOT") {
+			const neg = this.applyWhere(records, body);
+			const negSet = new Set(neg.map(keyOf));
+			return records.filter((r) => !negSet.has(keyOf(r)));
+		}
+
 		if (op === "GT" || op === "LT" || op === "EQ") {
-			if (!body || typeof body !== "object") return [];
-			const k = Object.keys(body)[0];
+			if (!body || typeof body !== "object" || Array.isArray(body)) return [];
+			const ks = Object.keys(body);
+			if (ks.length !== 1) return [];
+			const k = ks[0];
 			const v = body[k];
+			if (typeof v !== "number") return [];
 			return records.filter((r) => {
 				const x = r[k];
-				if (typeof x !== "number" || typeof v !== "number") return false;
+				if (typeof x !== "number") return false;
 				if (op === "GT") return x > v;
 				if (op === "LT") return x < v;
 				return x === v;
@@ -914,13 +961,15 @@ class Model {
 		}
 
 		if (op === "IS") {
-			if (!body || typeof body !== "object") return [];
-			const k = Object.keys(body)[0];
+			if (!body || typeof body !== "object" || Array.isArray(body)) return [];
+			const ks = Object.keys(body);
+			if (ks.length !== 1) return [];
+			const k = ks[0];
 			const v = body[k];
-			return records.filter((r) => typeof r[k] === "string" && typeof v === "string" && this.matchIs(r[k], v));
+			if (typeof v !== "string") return [];
+			return records.filter((r) => typeof r[k] === "string" && this.matchIs(r[k], v));
 		}
 
-		// unsupported filters not implemented yet
 		return [];
 	}
 
