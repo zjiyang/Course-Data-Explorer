@@ -122,13 +122,20 @@ describe("REST API v1", function () {
 			expect(res).to.have.property("status", UNPROCESSABLE_ENTITY);
 			expect(res.body).to.have.property("error", "Validation failed");
 			expect(res.body).to.have.property("fields").that.is.an("object");
-			// reference may include one or both keys; don't over-assume
-			if (res.body.fields.kind !== undefined) {
-				expect(res.body.fields.kind).to.be.oneOf(["required but missing", "expected to be course_offerings"]);
-			}
-			if (res.body.fields.archive !== undefined) {
-				expect(res.body.fields.archive).to.be.oneOf(["required but missing", "expected non-empty file"]);
-			}
+
+			// ✅ spec examples often report these as "expected ..." even when missing,
+			// but some implementations might say "required but missing".
+			expect(res.body.fields).to.have.property("kind");
+			expect(res.body.fields.kind).to.be.oneOf([
+				"required but missing",
+				"expected to be course_offerings",
+			]);
+
+			expect(res.body.fields).to.have.property("archive");
+			expect(res.body.fields.archive).to.be.oneOf([
+				"required but missing",
+				"expected non-empty file",
+			]);
 		}
 
 		// kind wrong
@@ -249,7 +256,9 @@ describe("REST API v1", function () {
 
 		expect(res).to.have.property("status", BAD_REQUEST);
 		expect(res.body).to.have.property("error", "Invalid query");
-		// wording has changed across versions; accept both to match reference
+
+		// ✅ spec uses: "ORDER must be a key in COLUMNS"
+		// some versions used: "ORDER key must be in COLUMNS"
 		expect(res.body).to.have.property("message").that.is.oneOf([
 			"ORDER must be a key in COLUMNS",
 			"ORDER key must be in COLUMNS",
