@@ -4,24 +4,14 @@ import cors from "cors";
 import multer from "multer";
 import JSZip from "jszip";
 
-/**
- * Express application.
- */
 export type Application = ReturnType<typeof express>;
 
-/**
- * Configuration options for the application.
- */
 export type AppConfig = {
 	readonly datadir: string;
 };
 
-/**
- * Initializes the application.
- */
 export async function createApp(config: AppConfig): Promise<Application> {
 	const app = express();
-
 	const { datadir } = config;
 
 	await fs.mkdir(datadir, { recursive: true });
@@ -37,10 +27,6 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		res.send("App is running!");
 	});
 
-	// ----------------------------
-	// Datasets
-	// ----------------------------
-
 	app.post("/api/v1/datasets", upload.single("archive"), async (req, res) => {
 		const fields: Record<string, string> = {};
 
@@ -48,13 +34,16 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		if (kind === undefined) fields.kind = "required but missing";
 		else if (kind !== "course_offerings") fields.kind = "expected to be course_offerings";
 
-		if (!req.file) fields.archive = "required but missing";
-		else if (!req.file.buffer || req.file.size === 0) fields.archive = "expected non-empty file";
+		const file = req.file;
+		if (!file) fields.archive = "required but missing";
+		else if (!file.buffer || file.size === 0) fields.archive = "expected non-empty file";
 
 		if (Object.keys(fields).length > 0) {
 			res.status(422).send({ error: "Validation failed", fields });
 			return;
 		}
+
+		const buf = file!.buffer;
 
 		const model = new Model(datadir);
 		const id = `upload_${Date.now()}_${Math.floor(Math.random() * 1_000_000)}`;
@@ -68,11 +57,11 @@ export async function createApp(config: AppConfig): Promise<Application> {
 			message: "Dataset accepted for processing",
 		});
 
-		// async processing
 		setImmediate(async () => {
 			try {
-				const zip = await JSZip.loadAsync(req.file!.buffer);
+				const zip = await JSZip.loadAsync(buf);
 				const fileNames = Object.keys(zip.files);
+
 				const hasCoursesDir =
 					zip.files["courses/"]?.dir === true || fileNames.some((n) => n.startsWith("courses/") && n !== "courses/");
 
@@ -97,10 +86,6 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		}
 		res.status(200).send(job);
 	});
-
-	// ----------------------------
-	// Search
-	// ----------------------------
 
 	app.post("/api/v1/search", async (req, res) => {
 		const fields: Record<string, string> = {};
@@ -127,55 +112,10 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		}
 
 		const q = req.body.query;
-
-		// 400: Missing WHERE
-		if (q.WHERE === undefined) {
-			res.status(400).send({ error: "Invalid query", message: "Missing WHERE" });
+		const v = validateSearchQuery(q);
+		if (!v.ok) {
+			res.status(400).send({ error: "Invalid query", message: v.message });
 			return;
-		}
-
-		if (q.WHERE === null || typeof q.WHERE !== "object" || Array.isArray(q.WHERE) || Object.keys(q.WHERE).length > 1) {
-			res.status(400).send({ error: "Invalid query", message: "WHERE must be an object with at most one FILTER" });
-			return;
-		}
-
-		// Need OPTIONS
-		if (q.OPTIONS === undefined) {
-			res.status(400).send({ error: "Invalid query", message: "Missing OPTIONS" });
-			return;
-		}
-
-		if (q.OPTIONS === null || typeof q.OPTIONS !== "object" || Array.isArray(q.OPTIONS)) {
-			res
-				.status(400)
-				.send({ error: "Invalid query", message: "OPTIONS must be an object with COLUMNS and optional ORDER" });
-			return;
-		}
-
-		// Need COLUMNS
-		if (q.OPTIONS.COLUMNS === undefined) {
-			res.status(400).send({ error: "Invalid query", message: "Missing COLUMNS" });
-			return;
-		}
-		if (!Array.isArray(q.OPTIONS.COLUMNS) || q.OPTIONS.COLUMNS.length === 0) {
-			res.status(400).send({ error: "Invalid query", message: "Missing COLUMNS" });
-			return;
-		}
-
-		const allowedKeys = new Set(["avg", "pass", "fail", "audit", "year", "title", "dept", "code", "instructor"]);
-		for (const k of q.OPTIONS.COLUMNS) {
-			if (typeof k !== "string" || !allowedKeys.has(k)) {
-				res.status(400).send({ error: "Invalid query", message: "Unknown key in COLUMNS" });
-				return;
-			}
-		}
-
-		// ORDER must be in COLUMNS (if present)
-		if (q.OPTIONS.ORDER !== undefined) {
-			if (typeof q.OPTIONS.ORDER !== "string" || !q.OPTIONS.COLUMNS.includes(q.OPTIONS.ORDER)) {
-				res.status(400).send({ error: "Invalid query", message: "ORDER must be a key in COLUMNS" });
-				return;
-			}
 		}
 
 		const model = new Model(datadir);
@@ -192,10 +132,6 @@ export async function createApp(config: AppConfig): Promise<Application> {
 
 		res.status(200).send(results);
 	});
-
-	// ----------------------------
-	// Courses (unchanged logic)
-	// ----------------------------
 
 	app.get("/api/v1/courses", async (req, res) => {
 		const limitRaw = req.query.limit;
@@ -311,10 +247,6 @@ export async function createApp(config: AppConfig): Promise<Application> {
 			sections: out.removedSections,
 		});
 	});
-
-	// ----------------------------
-	// Sections (unchanged logic)
-	// ----------------------------
 
 	app.get("/api/v1/courses/:course/sections", async (req, res) => {
 		const limitRaw = req.query.limit;
@@ -490,10 +422,6 @@ export async function createApp(config: AppConfig): Promise<Application> {
 	return app;
 }
 
-// ----------------------------
-// Model (disk persistence)
-// ----------------------------
-
 type Course = { id: string; title: string; dept: string; code: string };
 type Section = { id: string; instructor: string; year: number; avg: number; pass: number; fail: number; audit: number };
 
@@ -548,7 +476,6 @@ class Model {
 		await fs.writeFile(this.file, JSON.stringify(this.data, null, 2), "utf-8");
 	}
 
-	// ---------- courses ----------
 	async listCoursesSorted(): Promise<Course[]> {
 		await this.load();
 		return Object.values(this.data.courses).sort((a, b) => a.id.localeCompare(b.id));
@@ -589,7 +516,6 @@ class Model {
 		return { course, removedSections };
 	}
 
-	// ---------- sections ----------
 	async listSectionsSorted(courseId: string): Promise<Section[] | "NO_COURSE"> {
 		await this.load();
 		if (!this.data.courses[courseId]) return "NO_COURSE";
@@ -632,7 +558,6 @@ class Model {
 		return section;
 	}
 
-	// ---------- datasets ----------
 	private emptyStats(): UploadStats {
 		return {
 			files_total: 0,
@@ -765,12 +690,8 @@ class Model {
 				const failNum = toNum(r.Fail);
 				const auditNum = toNum(r.Audit);
 
-				if (yearNum === null || avgNum === null || passNum === null || failNum === null || auditNum === null) {
-					continue;
-				}
-				if (!Number.isInteger(passNum) || !Number.isInteger(failNum) || !Number.isInteger(auditNum)) {
-					continue;
-				}
+				if (yearNum === null || avgNum === null || passNum === null || failNum === null || auditNum === null) continue;
+				if (!Number.isInteger(passNum) || !Number.isInteger(failNum) || !Number.isInteger(auditNum)) continue;
 
 				const normalized: Offering = {
 					id: r.id,
@@ -787,7 +708,6 @@ class Model {
 				};
 
 				const courseId = `${normalized.Subject}${normalized.Course}`;
-
 				deptByCourse[courseId] = normalized.Subject;
 				codeByCourse[courseId] = normalized.Course;
 
@@ -873,7 +793,6 @@ class Model {
 		await this.completeDatasetJob(id, stats);
 	}
 
-	// ---------- search ----------
 	private buildAllOfferings(): Array<Record<string, any>> {
 		const out: Array<Record<string, any>> = [];
 		for (const courseId of Object.keys(this.data.courses)) {
@@ -898,31 +817,26 @@ class Model {
 	}
 
 	private matchIs(value: string, pattern: string): boolean {
-		if (pattern.startsWith("*") && pattern.endsWith("*") && pattern.length >= 2) {
-			const mid = pattern.slice(1, -1);
-			return value.includes(mid);
-		}
+		if (pattern.startsWith("*") && pattern.endsWith("*")) return value.includes(pattern.slice(1, -1));
 		if (pattern.startsWith("*")) return value.endsWith(pattern.slice(1));
 		if (pattern.endsWith("*")) return value.startsWith(pattern.slice(0, -1));
 		return value === pattern;
 	}
 
-	private applyWhere(records: any[], where: any): any[] {
-		if (where === undefined) return [];
-		if (where === null || typeof where !== "object" || Array.isArray(where)) return [];
-
-		const keys = Object.keys(where);
+	private evalFilter(records: any[], filterObj: any): any[] {
+		if (!filterObj || typeof filterObj !== "object" || Array.isArray(filterObj)) return [];
+		const keys = Object.keys(filterObj);
 		if (keys.length === 0) return records;
-		if (keys.length > 1) return [];
+		if (keys.length !== 1) return [];
 
 		const op = keys[0];
-		const body = where[op];
+		const body = filterObj[op];
 
 		const keyOf = (r: any) => JSON.stringify(r);
 
 		if (op === "AND" || op === "OR") {
 			if (!Array.isArray(body) || body.length === 0) return [];
-			const parts = body.map((sub) => this.applyWhere(records, sub));
+			const parts = body.map((sub) => this.evalFilter(records, sub));
 
 			if (op === "AND") {
 				let set = new Set(parts[0].map(keyOf));
@@ -931,15 +845,16 @@ class Model {
 					set = new Set([...set].filter((k) => next.has(k)));
 				}
 				return records.filter((r) => set.has(keyOf(r)));
-			} else {
-				const set = new Set<string>();
-				for (const p of parts) for (const r of p) set.add(keyOf(r));
-				return records.filter((r) => set.has(keyOf(r)));
 			}
+
+			const set = new Set<string>();
+			for (const p of parts) for (const r of p) set.add(keyOf(r));
+			return records.filter((r) => set.has(keyOf(r)));
 		}
 
 		if (op === "NOT") {
-			const neg = this.applyWhere(records, body);
+			if (!body || typeof body !== "object" || Array.isArray(body)) return [];
+			const neg = this.evalFilter(records, body);
 			const negSet = new Set(neg.map(keyOf));
 			return records.filter((r) => !negSet.has(keyOf(r)));
 		}
@@ -981,13 +896,23 @@ class Model {
 		const order: string | undefined = queryObj.OPTIONS.ORDER;
 
 		let records = this.buildAllOfferings();
-		records = this.applyWhere(records, where);
+
+		const whereKeys = Object.keys(where);
+		if (whereKeys.length === 1) {
+			const filterKey = whereKeys[0];
+			const filterObj = { [filterKey]: where[filterKey] };
+			records = this.evalFilter(records, filterObj);
+		}
+
+		if (records.length > 5000) return new Array(5001);
 
 		let projected = records.map((r) => {
 			const o: any = {};
 			for (const c of columns) o[c] = r[c];
 			return o;
 		});
+
+		if (projected.length > 5000) return new Array(5001);
 
 		if (order) {
 			projected = projected.sort((a, b) => {
@@ -1000,4 +925,103 @@ class Model {
 
 		return projected;
 	}
+}
+
+type ValidationOk = { ok: true };
+type ValidationBad = { ok: false; message: string };
+
+function validateSearchQuery(q: any): ValidationOk | ValidationBad {
+	if (q.WHERE === undefined) return { ok: false, message: "Missing WHERE" };
+	if (q.OPTIONS === undefined) return { ok: false, message: "Missing OPTIONS" };
+
+	if (q.WHERE === null || typeof q.WHERE !== "object" || Array.isArray(q.WHERE) || Object.keys(q.WHERE).length > 1) {
+		return { ok: false, message: "WHERE must be an object with at most one FILTER" };
+	}
+
+	if (q.OPTIONS === null || typeof q.OPTIONS !== "object" || Array.isArray(q.OPTIONS)) {
+		return { ok: false, message: "OPTIONS must be an object with COLUMNS and optional ORDER" };
+	}
+
+	if (q.OPTIONS.COLUMNS === undefined) return { ok: false, message: "Missing COLUMNS" };
+	if (!Array.isArray(q.OPTIONS.COLUMNS) || q.OPTIONS.COLUMNS.length === 0)
+		return { ok: false, message: "Missing COLUMNS" };
+
+	const mfields = new Set(["avg", "pass", "fail", "audit", "year"]);
+	const sfields = new Set(["title", "dept", "code", "instructor"]);
+	const allowed = new Set([...mfields, ...sfields]);
+
+	for (const k of q.OPTIONS.COLUMNS) {
+		if (typeof k !== "string" || !allowed.has(k)) return { ok: false, message: "Unknown key in COLUMNS" };
+	}
+
+	if (q.OPTIONS.ORDER !== undefined) {
+		if (typeof q.OPTIONS.ORDER !== "string" || !q.OPTIONS.COLUMNS.includes(q.OPTIONS.ORDER)) {
+			return { ok: false, message: "ORDER must be a key in COLUMNS" };
+		}
+	}
+
+	const whereKeys = Object.keys(q.WHERE);
+	if (whereKeys.length === 0) return { ok: true };
+
+	const rootOp = whereKeys[0];
+	const rootBody = q.WHERE[rootOp];
+	return validateFilterNode(rootOp, rootBody, mfields, sfields);
+}
+
+function validateFilterNode(
+	op: string,
+	body: any,
+	mfields: Set<string>,
+	sfields: Set<string>
+): ValidationOk | ValidationBad {
+	if (op === "AND" || op === "OR") {
+		if (!Array.isArray(body) || body.length === 0)
+			return { ok: false, message: `${op} must be a non-empty array of FILTER objects` };
+		for (const item of body) {
+			if (!item || typeof item !== "object" || Array.isArray(item))
+				return { ok: false, message: `${op} must be a non-empty array of FILTER objects` };
+			const ks = Object.keys(item);
+			if (ks.length !== 1) return { ok: false, message: `${op} must be a non-empty array of FILTER objects` };
+			const subOp = ks[0];
+			const subBody = item[subOp];
+			const sub = validateFilterNode(subOp, subBody, mfields, sfields);
+			if (!sub.ok) return sub;
+		}
+		return { ok: true };
+	}
+
+	if (op === "NOT") {
+		if (!body || typeof body !== "object" || Array.isArray(body))
+			return { ok: false, message: "NOT must be a FILTER object" };
+		const ks = Object.keys(body);
+		if (ks.length !== 1) return { ok: false, message: "NOT must be a FILTER object" };
+		return validateFilterNode(ks[0], body[ks[0]], mfields, sfields);
+	}
+
+	if (op === "LT" || op === "GT" || op === "EQ") {
+		if (!body || typeof body !== "object" || Array.isArray(body))
+			return { ok: false, message: `${op} must be an object with one mfield of type number` };
+		const ks = Object.keys(body);
+		if (ks.length !== 1) return { ok: false, message: `${op} must be an object with one mfield of type number` };
+		const k = ks[0];
+		if (!mfields.has(k) || typeof body[k] !== "number")
+			return { ok: false, message: `${op} must be an object with one mfield of type number` };
+		return { ok: true };
+	}
+
+	if (op === "IS") {
+		if (!body || typeof body !== "object" || Array.isArray(body))
+			return { ok: false, message: "IS must be an object with one sfield of type string" };
+		const ks = Object.keys(body);
+		if (ks.length !== 1) return { ok: false, message: "IS must be an object with one sfield of type string" };
+		const k = ks[0];
+		const v = body[k];
+		if (!sfields.has(k) || typeof v !== "string")
+			return { ok: false, message: "IS must be an object with one sfield of type string" };
+		if (v.length >= 3 && v.slice(1, -1).includes("*"))
+			return { ok: false, message: "IS asterisks can only be first or last character" };
+		return { ok: true };
+	}
+
+	return { ok: false, message: "WHERE must be an object with at most one FILTER" };
 }
