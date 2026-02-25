@@ -673,7 +673,6 @@ class Model {
 				if (
 					!r ||
 					typeof r !== "object" ||
-					typeof r.id !== "string" ||
 					typeof r.Course !== "string" ||
 					typeof r.Title !== "string" ||
 					typeof r.Professor !== "string" ||
@@ -683,6 +682,10 @@ class Model {
 				) {
 					continue;
 				}
+
+				const idNum = toNum(r.id);
+				if (idNum === null) continue;
+				const idStr = String(idNum);
 
 				const yearNum = toNum(r.Year);
 				const avgNum = toNum(r.Avg);
@@ -694,7 +697,7 @@ class Model {
 				if (!Number.isInteger(passNum) || !Number.isInteger(failNum) || !Number.isInteger(auditNum)) continue;
 
 				const normalized: Offering = {
-					id: r.id,
+					id: idStr,
 					Course: r.Course,
 					Title: r.Title,
 					Professor: r.Professor,
@@ -711,7 +714,7 @@ class Model {
 				deptByCourse[courseId] = normalized.Subject;
 				codeByCourse[courseId] = normalized.Course;
 
-				if (maxYear[courseId] === undefined || yearNum > maxYear[courseId]) {
+				if (maxYear[courseId] === undefined || yearNum >= maxYear[courseId]) {
 					maxYear[courseId] = yearNum;
 					maxTitle[courseId] = normalized.Title;
 				}
