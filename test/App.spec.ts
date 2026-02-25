@@ -75,10 +75,39 @@ async function waitForProcessing(
 	return waitForProcessing(app, id, maxRetries - 1, delayMs);
 }
 
+// ========== Helper: write db.json quickly (for 5000+ results tests) ==========
+async function seedDbWithManySections(n: number): Promise<void> {
+	const courseId = "cpsc310";
+	const course = { id: courseId, title: "Intro", dept: "CS", code: "310" };
+
+	const sections: Record<string, any> = {};
+	for (let i = 0; i < n; i++) {
+		const sid = `s${i}`;
+		sections[sid] = {
+			id: sid,
+			instructor: "x",
+			year: 2021,
+			avg: 80,
+			pass: 1,
+			fail: 0,
+			audit: 0,
+		};
+	}
+
+	const db = {
+		courses: { [courseId]: course },
+		sections: { [courseId]: sections },
+		datasets: {},
+	};
+
+	await fs.mkdir(datadir, { recursive: true });
+	await fs.writeFile(`${datadir}/db.json`, JSON.stringify(db, null, 2), "utf-8");
+}
+
 describe("REST API v1", function () {
 	let app: Application;
 
-	// Prepared once for reuse (like reference style), but with our own content/names
+	// Prepared once for reuse
 	let validZipBuffer: Buffer;
 
 	before(async () => {
@@ -133,7 +162,6 @@ describe("REST API v1", function () {
 		expect(res).to.have.property("status", UNPROCESSABLE_ENTITY);
 		expect(res.body).to.have.property("error", "Validation failed");
 		expect(res.body).to.have.property("fields").that.is.an("object");
-
 		expect(res.body.fields).to.have.property("archive");
 		expect(res.body.fields.archive).to.be.oneOf(["required but missing", "expected non-empty file"]);
 	});
@@ -213,21 +241,6 @@ describe("REST API v1", function () {
 		expect(done.body).to.have.property("message", "Missing root courses directory");
 	});
 
-	// it("POST /api/v1/datasets should accept a valid zip file and return 202 Accepted", async () => {
-	// 	const res = await request(app)
-	// 		.post("/api/v1/datasets")
-	// 		.field("kind", "course_offerings")
-	// 		.attach("archive", validZipBuffer, "valid-sample.zip");
-
-	// 	expect(res).to.have.property("status", ACCEPTED);
-	// 	expect(res).to.have.deep.property("body", {
-	// 		id: res.body.id,
-	// 		status: "processing",
-	// 		kind: "course_offerings",
-	// 		message: "Dataset accepted for processing",
-	// 	});
-	// });
-
 	it("POST /api/v1/datasets should return an id that can be used to check status via GET /api/v1/datasets/{id}", async () => {
 		const res = await request(app)
 			.post("/api/v1/datasets")
@@ -242,37 +255,45 @@ describe("REST API v1", function () {
 		expect(statusRes.body).to.have.property("id", res.body.id);
 	});
 
-	// it("POST /api/v1/datasets should set status to 'completed' and create course + section from valid zip", async () => {
-	// 	const res = await request(app)
-	// 		.post("/api/v1/datasets")
-	// 		.field("kind", "course_offerings")
-	// 		.attach("archive", validZipBuffer, "valid-sample.zip");
+	it("POST /api/v1/datasets should eventually create course + section from valid zip", async () => {
+		const res = await request(app)
+			.post("/api/v1/datasets")
+			.field("kind", "course_offerings")
+			.attach("archive", validZipBuffer, "valid-sample.zip");
 
-	// 	expect(res).to.have.property("status", ACCEPTED);
+		expect(res).to.have.property("status", ACCEPTED);
 
-	// 	const done = await waitForProcessing(app, res.body.id);
-	// 	expect(done).to.have.property("status", OK);
-	// 	expect(done.body).to.have.property("status", "completed");
+		const done = await waitForProcessing(app, res.body.id);
+		expect(done).to.have.property("status", OK);
+		expect(done.body).to.have.property("status").that.is.oneOf(["completed", "failed"]);
 
-	// 	// course id = Subject + Course = "ling" + "121" = "ling121"
-	// 	const courseRes = await request(app).get("/api/v1/courses/ling121");
-	// 	expect(courseRes).to.have.property("status", OK);
-	// 	expect(courseRes.body).to.have.property("id", "ling121");
-	// 	expect(courseRes.body).to.have.property("dept", "ling");
-	// 	expect(courseRes.body).to.have.property("code", "121");
-	// 	expect(courseRes.body).to.have.property("title", "sample course title");
+		if (done.body.status !== "completed") {
+			throw new Error(`dataset job failed: ${done.body.message}`);
+		}
 
-	// 	// section id = offering id = "20002"
-	// 	const sectionRes = await request(app).get("/api/v1/courses/ling121/sections/20002");
-	// 	expect(sectionRes).to.have.property("status", OK);
-	// 	expect(sectionRes.body).to.have.property("id", "20002");
-	// 	expect(sectionRes.body).to.have.property("instructor", "someone, prof");
-	// 	expect(sectionRes.body).to.have.property("year", 2001);
-	// 	expect(sectionRes.body).to.have.property("avg", 62.3);
-	// 	expect(sectionRes.body).to.have.property("pass", 10);
-	// 	expect(sectionRes.body).to.have.property("fail", 1);
-	// 	expect(sectionRes.body).to.have.property("audit", 0);
-	// });
+		// course id = Subject + Course = "ling" + "121" = "ling121"
+		const courseRes = await request(app).get("/api/v1/courses/ling121");
+		expect(courseRes).to.have.property("status", OK);
+		expect(courseRes.body).to.include({
+			id: "ling121",
+			dept: "ling",
+			code: "121",
+			title: "sample course title",
+		});
+
+		// section id = offering id = "20002"
+		const sectionRes = await request(app).get("/api/v1/courses/ling121/sections/20002");
+		expect(sectionRes).to.have.property("status", OK);
+		expect(sectionRes.body).to.include({
+			id: "20002",
+			instructor: "someone, prof",
+			avg: 62.3,
+			pass: 10,
+			fail: 1,
+			audit: 0,
+		});
+		expect(sectionRes.body).to.have.property("year", 2001);
+	});
 
 	// =====================================================================
 	// Search
@@ -323,64 +344,108 @@ describe("REST API v1", function () {
 		expect(res.body.fields).to.have.property("query", "expected an object");
 	});
 
-	// it("POST /api/v1/search should respond 400 Missing WHERE", async () => {
-	// 	const res = await request(app).post("/api/v1/search").send({
-	// 		kind: "course_offerings",
-	// 		query: {
-	// 			// miss WHERE
-	// 			OPTIONS: {
-	// 				COLUMNS: ["dept", "avg"],
-	// 				ORDER: "avg",
-	// 			},
-	// 		},
-	// 	});
+	it("POST /api/v1/search should respond 400 Missing WHERE", async () => {
+		const res = await request(app).post("/api/v1/search").send({
+			kind: "course_offerings",
+			query: {
+				OPTIONS: {
+					COLUMNS: ["dept", "avg"],
+					ORDER: "avg",
+				},
+			},
+		});
 
-	// 	expect(res).to.have.property("status", BAD_REQUEST);
-	// 	expect(res).to.have.deep.property("body", {
-	// 		error: "Invalid query",
-	// 		message: "Missing WHERE",
-	// 	});
-	// });
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res.body).to.deep.equal({
+			error: "Invalid query",
+			message: "Missing WHERE",
+		});
+	});
 
-	// it("POST /api/v1/search should respond 400 Unknown key in COLUMNS", async () => {
-	// 	const res = await request(app).post("/api/v1/search").send({
-	// 		kind: "course_offerings",
-	// 		query: {
-	// 			WHERE: {}, // Missing WHERE
-	// 			OPTIONS: {
-	// 				// add a wrong key：id
-	// 				COLUMNS: ["dept", "avg", "id"],
-	// 				ORDER: "avg",
-	// 			},
-	// 		},
-	// 	});
+	it("POST /api/v1/search should respond 400 Missing OPTIONS", async () => {
+		const res = await request(app).post("/api/v1/search").send({
+			kind: "course_offerings",
+			query: {
+				WHERE: {},
+			},
+		});
 
-	// 	expect(res).to.have.property("status", BAD_REQUEST);
-	// 	expect(res).to.have.deep.property("body", {
-	// 		error: "Invalid query",
-	// 		message: "Unknown key in COLUMNS",
-	// 	});
-	// });
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res.body).to.deep.equal({
+			error: "Invalid query",
+			message: "Missing OPTIONS",
+		});
+	});
 
-	// it("POST /api/v1/search should respond 400 ORDER must be a key in COLUMNS", async () => {
-	// 	const res = await request(app).post("/api/v1/search").send({
-	// 		kind: "course_offerings",
-	// 		query: {
-	// 			WHERE: {},
-	// 			OPTIONS: {
-	// 				COLUMNS: ["dept"], // miss avg
-	// 				ORDER: "avg",
-	// 			},
-	// 		},
-	// 	});
+	it("POST /api/v1/search should respond 400 Unknown key in COLUMNS", async () => {
+		const res = await request(app).post("/api/v1/search").send({
+			kind: "course_offerings",
+			query: {
+				WHERE: {},
+				OPTIONS: {
+					COLUMNS: ["dept", "avg", "id"],
+					ORDER: "avg",
+				},
+			},
+		});
 
-	// 	expect(res).to.have.property("status", BAD_REQUEST);
-	// 	expect(res.body).to.have.property("error", "Invalid query");
-	// 	expect(res.body).to.have.property("message").that.is.oneOf([
-	// 		"ORDER must be a key in COLUMNS",
-	// 		"ORDER key must be in COLUMNS",
-	// 	]);
-	// });
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res.body).to.deep.equal({
+			error: "Invalid query",
+			message: "Unknown key in COLUMNS",
+		});
+	});
+
+	it("POST /api/v1/search should respond 400 ORDER must be a key in COLUMNS", async () => {
+		const res = await request(app).post("/api/v1/search").send({
+			kind: "course_offerings",
+			query: {
+				WHERE: {},
+				OPTIONS: {
+					COLUMNS: ["dept"],
+					ORDER: "avg",
+				},
+			},
+		});
+
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res.body).to.deep.equal({
+			error: "Invalid query",
+			message: "ORDER must be a key in COLUMNS",
+		});
+	});
+
+	it("POST /api/v1/search should respond 400 when IS has internal asterisk", async () => {
+		const res = await request(app).post("/api/v1/search").send({
+			kind: "course_offerings",
+			query: {
+				WHERE: { IS: { dept: "a*b" } },
+				OPTIONS: { COLUMNS: ["dept"] },
+			},
+		});
+
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res.body).to.deep.equal({
+			error: "Invalid query",
+			message: "IS asterisks can only be first or last character",
+		});
+	});
+
+	it("POST /api/v1/search should respond 400 when WHERE has more than one filter", async () => {
+		const res = await request(app).post("/api/v1/search").send({
+			kind: "course_offerings",
+			query: {
+				WHERE: { GT: { avg: 50 }, LT: { avg: 90 } },
+				OPTIONS: { COLUMNS: ["avg"] },
+			},
+		});
+
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res.body).to.deep.equal({
+			error: "Invalid query",
+			message: "WHERE must be an object with at most one FILTER",
+		});
+	});
 
 	it("POST /api/v1/search should respond 200 for a valid basic query", async () => {
 		const res = await request(app)
@@ -394,16 +459,17 @@ describe("REST API v1", function () {
 		expect(res.body).to.be.an("array");
 	});
 
-	it.skip("POST /api/v1/search should respond 413 Too many results when > 5000", async () => {
-		const res = await request(app)
-			.post("/api/v1/search")
-			.send({
-				kind: "course_offerings",
-				query: { WHERE: {}, OPTIONS: { COLUMNS: ["dept"] } },
-			});
+	it("POST /api/v1/search should respond 413 Too many results when > 5000", async () => {
+		await seedDbWithManySections(5001);
+
+		const res = await request(app).post("/api/v1/search").send({
+			kind: "course_offerings",
+			query: { WHERE: {}, OPTIONS: { COLUMNS: ["dept"] } },
+		});
 
 		expect(res).to.have.property("status", REQUEST_TOO_LONG);
 		expect(res.body).to.have.property("error", "Too many results");
+		expect(res.body).to.have.property("message", "Query would return more than 5000 results");
 		expect(res.body).to.have.property("limit", 5000);
 	});
 
@@ -431,21 +497,6 @@ describe("REST API v1", function () {
 		expect(res.body).to.have.property("items").that.is.an("array");
 		expect(res.body.items.map((c: any) => c.id)).to.deep.equal(["cpsc210", "cpsc310"]);
 	});
-
-	// it("GET /api/v1/courses should respond 400 for invalid pagination params", async () => {
-	// 	const res = await request(app).get("/api/v1/courses?limit=0&offset=-1");
-	// 	expect(res).to.have.property("status", BAD_REQUEST);
-	// 	expect(res.body).to.have.property("error", "Invalid request parameters");
-	// 	expect(res.body).to.have.property("params").that.is.an("object");
-
-	// 	if (res.body.params.limit !== undefined) {
-	// 		expect(res.body.params.limit).to.equal("expected an integer between 1 and 5000");
-	// 	}
-	// 	if (res.body.params.offset !== undefined) {
-	// 		expect(res.body.params.offset).to.equal("expected an integer >= 0");
-	// 	}
-	// 	expect(res.body.params.limit !== undefined || res.body.params.offset !== undefined).to.equal(true);
-	// });
 
 	it("GET /api/v1/courses/{course} should return course data", async () => {
 		await request(app).put("/api/v1/courses/cpsc310").send({
@@ -555,21 +606,6 @@ describe("REST API v1", function () {
 		expect(res).to.have.property("status", OK);
 		expect(res.body).to.have.property("items").that.is.an("array");
 	});
-
-	// it("GET /api/v1/courses/{course}/sections should respond 400 for invalid pagination params", async () => {
-	// 	const res = await request(app).get("/api/v1/courses/cpsc310/sections?limit=0&offset=-1");
-	// 	expect(res).to.have.property("status", BAD_REQUEST);
-	// 	expect(res.body).to.have.property("error", "Invalid request parameters");
-	// 	expect(res.body).to.have.property("params").that.is.an("object");
-
-	// 	if (res.body.params.limit !== undefined) {
-	// 		expect(res.body.params.limit).to.equal("expected an integer between 1 and 5000");
-	// 	}
-	// 	if (res.body.params.offset !== undefined) {
-	// 		expect(res.body.params.offset).to.equal("expected an integer >= 0");
-	// 	}
-	// 	expect(res.body.params.limit !== undefined || res.body.params.offset !== undefined).to.equal(true);
-	// });
 
 	it("GET /api/v1/courses/{course}/sections should respond 404 if course missing", async () => {
 		const res = await request(app).get("/api/v1/courses/cpsc310/sections");
