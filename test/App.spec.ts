@@ -345,15 +345,17 @@ describe("REST API v1", function () {
 	});
 
 	it("POST /api/v1/search should respond 400 Missing WHERE", async () => {
-		const res = await request(app).post("/api/v1/search").send({
-			kind: "course_offerings",
-			query: {
-				OPTIONS: {
-					COLUMNS: ["dept", "avg"],
-					ORDER: "avg",
+		const res = await request(app)
+			.post("/api/v1/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					OPTIONS: {
+						COLUMNS: ["dept", "avg"],
+						ORDER: "avg",
+					},
 				},
-			},
-		});
+			});
 
 		expect(res).to.have.property("status", BAD_REQUEST);
 		expect(res.body).to.deep.equal({
@@ -363,12 +365,14 @@ describe("REST API v1", function () {
 	});
 
 	it("POST /api/v1/search should respond 400 Missing OPTIONS", async () => {
-		const res = await request(app).post("/api/v1/search").send({
-			kind: "course_offerings",
-			query: {
-				WHERE: {},
-			},
-		});
+		const res = await request(app)
+			.post("/api/v1/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: {},
+				},
+			});
 
 		expect(res).to.have.property("status", BAD_REQUEST);
 		expect(res.body).to.deep.equal({
@@ -378,16 +382,18 @@ describe("REST API v1", function () {
 	});
 
 	it("POST /api/v1/search should respond 400 Unknown key in COLUMNS", async () => {
-		const res = await request(app).post("/api/v1/search").send({
-			kind: "course_offerings",
-			query: {
-				WHERE: {},
-				OPTIONS: {
-					COLUMNS: ["dept", "avg", "id"],
-					ORDER: "avg",
+		const res = await request(app)
+			.post("/api/v1/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: {},
+					OPTIONS: {
+						COLUMNS: ["dept", "avg", "id"],
+						ORDER: "avg",
+					},
 				},
-			},
-		});
+			});
 
 		expect(res).to.have.property("status", BAD_REQUEST);
 		expect(res.body).to.deep.equal({
@@ -397,16 +403,18 @@ describe("REST API v1", function () {
 	});
 
 	it("POST /api/v1/search should respond 400 ORDER must be a key in COLUMNS", async () => {
-		const res = await request(app).post("/api/v1/search").send({
-			kind: "course_offerings",
-			query: {
-				WHERE: {},
-				OPTIONS: {
-					COLUMNS: ["dept"],
-					ORDER: "avg",
+		const res = await request(app)
+			.post("/api/v1/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: {},
+					OPTIONS: {
+						COLUMNS: ["dept"],
+						ORDER: "avg",
+					},
 				},
-			},
-		});
+			});
 
 		expect(res).to.have.property("status", BAD_REQUEST);
 		expect(res.body).to.deep.equal({
@@ -416,13 +424,15 @@ describe("REST API v1", function () {
 	});
 
 	it("POST /api/v1/search should respond 400 when IS has internal asterisk", async () => {
-		const res = await request(app).post("/api/v1/search").send({
-			kind: "course_offerings",
-			query: {
-				WHERE: { IS: { dept: "a*b" } },
-				OPTIONS: { COLUMNS: ["dept"] },
-			},
-		});
+		const res = await request(app)
+			.post("/api/v1/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: { IS: { dept: "a*b" } },
+					OPTIONS: { COLUMNS: ["dept"] },
+				},
+			});
 
 		expect(res).to.have.property("status", BAD_REQUEST);
 		expect(res.body).to.deep.equal({
@@ -432,13 +442,15 @@ describe("REST API v1", function () {
 	});
 
 	it("POST /api/v1/search should respond 400 when WHERE has more than one filter", async () => {
-		const res = await request(app).post("/api/v1/search").send({
-			kind: "course_offerings",
-			query: {
-				WHERE: { GT: { avg: 50 }, LT: { avg: 90 } },
-				OPTIONS: { COLUMNS: ["avg"] },
-			},
-		});
+		const res = await request(app)
+			.post("/api/v1/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: { GT: { avg: 50 }, LT: { avg: 90 } },
+					OPTIONS: { COLUMNS: ["avg"] },
+				},
+			});
 
 		expect(res).to.have.property("status", BAD_REQUEST);
 		expect(res.body).to.deep.equal({
@@ -462,10 +474,12 @@ describe("REST API v1", function () {
 	it("POST /api/v1/search should respond 413 Too many results when > 5000", async () => {
 		await seedDbWithManySections(5001);
 
-		const res = await request(app).post("/api/v1/search").send({
-			kind: "course_offerings",
-			query: { WHERE: {}, OPTIONS: { COLUMNS: ["dept"] } },
-		});
+		const res = await request(app)
+			.post("/api/v1/search")
+			.send({
+				kind: "course_offerings",
+				query: { WHERE: {}, OPTIONS: { COLUMNS: ["dept"] } },
+			});
 
 		expect(res).to.have.property("status", REQUEST_TOO_LONG);
 		expect(res.body).to.have.property("error", "Too many results");
@@ -749,5 +763,224 @@ describe("REST API v1", function () {
 		expect(res).to.have.property("status", NOT_FOUND);
 		expect(res.body).to.have.property("error", "Not found");
 		expect(res.body).to.have.property("message", "no section with id '21w201'");
+	});
+
+	// add more test
+	it("POST /api/v1/datasets should set section year to 1900 when Section is 'overall'", async () => {
+		const zipBuf = await makeZipBuffer({
+			"courses/overall.json": JSON.stringify({
+				result: [
+					makeValidOffering({
+						id: "30001",
+						Section: "overall",
+						Year: "2019",
+						Subject: "ling",
+						Course: "121",
+					}),
+				],
+			}),
+		});
+
+		const postRes = await request(app)
+			.post("/api/v1/datasets")
+			.field("kind", "course_offerings")
+			.attach("archive", zipBuf, "overall.zip");
+
+		expect(postRes).to.have.property("status", ACCEPTED);
+
+		const done = await waitForProcessing(app, postRes.body.id);
+		expect(done.body).to.have.property("status", "completed");
+
+		const sectionRes = await request(app).get("/api/v1/courses/ling121/sections/30001");
+		expect(sectionRes).to.have.property("status", OK);
+		expect(sectionRes.body).to.have.property("year", 1900);
+	});
+
+	it("POST /api/v1/datasets should use the most recent Title and break ties by later record (same Year)", async () => {
+		const zipBuf = await makeZipBuffer({
+			"courses/tie.json": JSON.stringify({
+				result: [
+					makeValidOffering({
+						id: "40001",
+						Subject: "ling",
+						Course: "121",
+						Year: "2020",
+						Title: "Title A",
+					}),
+					makeValidOffering({
+						id: "40002",
+						Subject: "ling",
+						Course: "121",
+						Year: "2020", // same year
+						Title: "Title B", // later record should win
+					}),
+				],
+			}),
+		});
+
+		const postRes = await request(app)
+			.post("/api/v1/datasets")
+			.field("kind", "course_offerings")
+			.attach("archive", zipBuf, "tie.zip");
+
+		expect(postRes).to.have.property("status", ACCEPTED);
+
+		const done = await waitForProcessing(app, postRes.body.id);
+		expect(done.body).to.have.property("status", "completed");
+
+		const courseRes = await request(app).get("/api/v1/courses/ling121");
+		expect(courseRes).to.have.property("status", OK);
+		expect(courseRes.body).to.have.property("title", "Title B");
+	});
+
+	it("POST /api/v1/search should respond 400 when AND has empty array", async () => {
+		const res = await request(app)
+			.post("/api/v1/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: { AND: [] },
+					OPTIONS: { COLUMNS: ["dept"] },
+				},
+			});
+
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res.body).to.deep.equal({
+			error: "Invalid query",
+			message: "AND must be a non-empty array of FILTER objects",
+		});
+	});
+
+	it("POST /api/v1/search should respond 400 when NOT is not a FILTER object", async () => {
+		const res = await request(app)
+			.post("/api/v1/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: { NOT: 123 },
+					OPTIONS: { COLUMNS: ["dept"] },
+				},
+			});
+
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res.body).to.deep.equal({
+			error: "Invalid query",
+			message: "NOT must be a FILTER object",
+		});
+	});
+
+	it("POST /api/v1/datasets should skip invalid files but still complete when at least one valid file exists", async () => {
+		const zipBuf = await makeZipBuffer({
+			"courses/bad.json": "{ not valid json", // JSON.parse will fail
+			"courses/norecord.json": JSON.stringify({ notResult: [] }), // missing result
+			"courses/good.json": JSON.stringify({ result: [makeValidOffering({ id: "50001" })] }),
+		});
+
+		const postRes = await request(app)
+			.post("/api/v1/datasets")
+			.field("kind", "course_offerings")
+			.attach("archive", zipBuf, "mixed.zip");
+
+		expect(postRes).to.have.property("status", ACCEPTED);
+
+		const done = await waitForProcessing(app, postRes.body.id);
+		expect(done.body).to.have.property("status", "completed");
+
+		const courseRes = await request(app).get("/api/v1/courses/ling121");
+		expect(courseRes).to.have.property("status", OK);
+
+		const sectionRes = await request(app).get("/api/v1/courses/ling121/sections/50001");
+		expect(sectionRes).to.have.property("status", OK);
+	});
+
+	it("POST /api/v1/datasets should skip records that cannot be converted to expected types", async () => {
+		const bad = makeValidOffering({
+			id: "not-a-number", // should fail conversion
+			Pass: "ten", // should fail conversion too (even if id passed)
+		});
+
+		const good = makeValidOffering({
+			id: "60001",
+			Subject: "ling",
+			Course: "121",
+		});
+
+		const zipBuf = await makeZipBuffer({
+			"courses/mixed.json": JSON.stringify({ result: [bad, good] }),
+		});
+
+		const postRes = await request(app)
+			.post("/api/v1/datasets")
+			.field("kind", "course_offerings")
+			.attach("archive", zipBuf, "skip-records.zip");
+
+		expect(postRes).to.have.property("status", ACCEPTED);
+
+		const done = await waitForProcessing(app, postRes.body.id);
+		expect(done.body).to.have.property("status", "completed");
+
+		// good record should exist
+		const sectionGood = await request(app).get("/api/v1/courses/ling121/sections/60001");
+		expect(sectionGood).to.have.property("status", OK);
+
+		// bad record should NOT exist (id would never become a valid section id)
+		const sectionBad = await request(app).get("/api/v1/courses/ling121/sections/not-a-number");
+		expect(sectionBad).to.have.property("status", NOT_FOUND);
+	});
+
+	it("POST /api/v1/search should support LT, EQ, and IS with wildcard", async () => {
+		// seed one course + section
+		await request(app).put("/api/v1/courses/cpsc310").send({
+			title: "Intro to SE",
+			dept: "cpsc",
+			code: "310",
+		});
+		await request(app).put("/api/v1/courses/cpsc310/sections/70001").send({
+			instructor: "holmes, reid",
+			year: 2021,
+			avg: 76.4,
+			pass: 167,
+			fail: 3,
+			audit: 1,
+		});
+
+		// LT branch
+		{
+			const res = await request(app).post("/api/v1/search").send({
+				kind: "course_offerings",
+				query: {
+					WHERE: { LT: { avg: 80 } },
+					OPTIONS: { COLUMNS: ["dept", "avg", "instructor"], ORDER: "avg" },
+				},
+			});
+			expect(res).to.have.property("status", OK);
+			expect(res.body).to.be.an("array").that.is.not.empty;
+		}
+
+		// EQ branch
+		{
+			const res = await request(app).post("/api/v1/search").send({
+				kind: "course_offerings",
+				query: {
+					WHERE: { EQ: { pass: 167 } },
+					OPTIONS: { COLUMNS: ["pass", "dept"] },
+				},
+			});
+			expect(res).to.have.property("status", OK);
+			expect(res.body).to.be.an("array").that.is.not.empty;
+		}
+
+		// IS wildcard branch (* at end / start)
+		{
+			const res = await request(app).post("/api/v1/search").send({
+				kind: "course_offerings",
+				query: {
+					WHERE: { IS: { instructor: "*reid" } }, // endsWith
+					OPTIONS: { COLUMNS: ["instructor"] },
+				},
+			});
+			expect(res).to.have.property("status", OK);
+			expect(res.body).to.be.an("array").that.is.not.empty;
+		}
 	});
 });
