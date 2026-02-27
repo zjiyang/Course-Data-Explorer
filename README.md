@@ -42,3 +42,14 @@ IntelliJ Ultimate should be automatically configured the first time you open the
 ### License
 
 Licensing terms are specified in [LICENSE](LICENSE).
+
+
+## Checkpoint 1 – Course Explorer Frontend
+
+### Running the frontend (TA demo)
+
+From the `frontend/` directory:
+
+```bash
+yarn install
+yarn demo

@@ -115,6 +115,7 @@ function resetFiltersAndReload() {
 	byId("year-min").value = "";
 	byId("year-max").value = "";
 	byId("instructor-input").value = "";
+	autoSelectFirstDeptIfNone();
 	return refreshTable();
 }
 
