@@ -5,8 +5,98 @@
 		<title>310 Frontend</title>
 		<link href="/style.css" rel="stylesheet" />
 	</head>
+
 	<body>
-		<button id="click-me-button" class="button">Click to get server status!</button>
+		<header class="header">
+			<h1>InsightUBC Course Explorer</h1>
+			<p class="muted">Upload a dataset, then explore offerings with filters & sorting (server-side).</p>
+		</header>
+
+		<section class="card">
+			<h2>Dataset Upload</h2>
+
+			<div class="row">
+				<input id="dataset-file" type="file" accept=".zip" />
+				<button id="upload-btn" class="button">Upload</button>
+				<button
+					id="clear-data-btn"
+					class="button secondary"
+					title="Delete all uploaded courses & sections"
+				>
+					Clear Data
+				</button>
+			</div>
+
+			<div class="row status">
+				<div id="upload-spinner" class="spinner hidden" aria-label="processing"></div>
+				<div id="upload-status" class="muted">No upload yet.</div>
+			</div>
+
+			<div id="upload-result" class="result"></div>
+			<div id="upload-error" class="error"></div>
+		</section>
+
+		<section class="card">
+			<h2>Filters</h2>
+
+			<div class="grid">
+				<div class="field">
+					<label for="dept-select">Departments (multi-select)</label>
+					<select id="dept-select" multiple size="6"></select>
+					<div class="hint">Tip: Ctrl/Cmd-click to select multiple.</div>
+				</div>
+
+				<div class="field">
+					<label>Year range</label>
+					<div class="row">
+						<input id="year-min" type="number" placeholder="Min (e.g., 2015)" />
+						<input id="year-max" type="number" placeholder="Max (e.g., 2020)" />
+					</div>
+					<div class="hint">Leave blank for no bound.</div>
+				</div>
+
+				<div class="field">
+					<label for="instructor-input">Instructor (partial match)</label>
+					<input id="instructor-input" type="text" placeholder="e.g., holmes" />
+					<div class="hint">Uses IS with *pattern*.</div>
+				</div>
+
+				<div class="field">
+					<label>Actions</label>
+					<div class="row">
+						<button id="apply-btn" class="button">Apply Filters</button>
+						<button id="reset-btn" class="button secondary">Reset</button>
+					</div>
+				</div>
+			</div>
+
+			<div id="query-error" class="error"></div>
+		</section>
+
+		<section class="card">
+			<div class="row space-between">
+				<h2>Offerings</h2>
+				<div class="muted" id="table-meta"></div>
+			</div>
+
+			<div class="table-wrap">
+				<table id="results-table">
+					<thead>
+						<tr>
+							<th data-sort="dept">dept</th>
+							<th data-sort="code">code</th>
+							<th data-sort="title">title</th>
+							<th data-sort="year">year</th>
+							<th data-sort="instructor">instructor</th>
+							<th data-sort="avg">avg</th>
+						</tr>
+					</thead>
+					<tbody id="results-body"></tbody>
+				</table>
+			</div>
+
+			<div class="muted small">Click a column header to sort (server-side). Click again to toggle ▲/▼.</div>
+		</section>
 
 		<script type="text/javascript" src="/frontend.js"></script>
 	</body>

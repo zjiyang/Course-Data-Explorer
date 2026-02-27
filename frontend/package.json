@@ -1,0 +1,7 @@
+{
+	"name": "insightubc-frontend",
+	"private": true,
+	"scripts": {
+	  "demo": "yarn --cwd .. start"
+	}
+  }
