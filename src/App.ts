@@ -627,10 +627,14 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		}
 
 		if (req.body.name === undefined) fields.name = "required but missing";
-		else if (typeof req.body.name !== "string") fields.name = "expected a string";
+		else if (typeof req.body.name !== "string" || req.body.name.trim().length === 0) {
+			fields.name = "expected a non-empty string";
+		}
 
 		if (req.body.address === undefined) fields.address = "required but missing";
-		else if (typeof req.body.address !== "string") fields.address = "expected a string";
+		else if (typeof req.body.address !== "string" || req.body.address.trim().length === 0) {
+			fields.address = "expected a non-empty string";
+		}
 
 		if (req.body.lat === undefined) fields.lat = "required but missing";
 		else if (typeof req.body.lat !== "number") fields.lat = "expected a number";
@@ -646,8 +650,8 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		const model = new Model(datadir);
 		const out = await model.setBuilding(
 			req.params.building,
-			req.body.name,
-			req.body.address,
+			req.body.name.trim(),
+			req.body.address.trim(),
 			req.body.lat,
 			req.body.lon
 		);
@@ -779,35 +783,74 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		}
 
 		if (req.body.building === undefined) fields.building = "required but missing";
-		else if (typeof req.body.building !== "string") fields.building = "expected a string";
+		else if (typeof req.body.building !== "string" || req.body.building.trim().length === 0) {
+			fields.building = "expected a non-empty string";
+		}
 
 		if (req.body.number === undefined) fields.number = "required but missing";
-		else if (typeof req.body.number !== "string") fields.number = "expected a string";
+		else if (typeof req.body.number !== "string" || req.body.number.trim().length === 0) {
+			fields.number = "expected a non-empty string";
+		}
 
 		if (req.body.type === undefined) fields.type = "required but missing";
-		else if (typeof req.body.type !== "string") fields.type = "expected a string";
+		else if (typeof req.body.type !== "string" || req.body.type.trim().length === 0) {
+			fields.type = "expected a non-empty string";
+		}
 
 		if (req.body.furniture === undefined) fields.furniture = "required but missing";
-		else if (typeof req.body.furniture !== "string") fields.furniture = "expected a string";
+		else if (typeof req.body.furniture !== "string" || req.body.furniture.trim().length === 0) {
+			fields.furniture = "expected a non-empty string";
+		}
 
 		if (req.body.href === undefined) fields.href = "required but missing";
-		else if (typeof req.body.href !== "string") fields.href = "expected a string";
+		else if (typeof req.body.href !== "string" || req.body.href.trim().length === 0) {
+			fields.href = "expected a non-empty string";
+		}
 
 		if (req.body.seats === undefined) fields.seats = "required but missing";
-		else if (!Number.isInteger(req.body.seats) || req.body.seats < 0) fields.seats = "expected a number >= 0";
+		else if (!Number.isInteger(req.body.seats) || req.body.seats < 0) {
+			fields.seats = "expected a number >= 0";
+		}
 
 		if (Object.keys(fields).length > 0) {
 			res.status(422).send({ error: "Validation failed", fields });
 			return;
 		}
 
+		if (req.body.building !== req.params.building) {
+			res.status(422).send({
+				error: "Validation failed",
+				fields: {
+					building: "must match building resource in path",
+				},
+			});
+			return;
+		}
+
+		const normalizedBuilding = req.params.building;
+		const normalizedNumber = req.body.number.trim();
+		const normalizedType = req.body.type.trim();
+		const normalizedFurniture = req.body.furniture.trim();
+		const normalizedHref = req.body.href.trim();
+
+		const expectedRoomId = `${normalizedBuilding}_${normalizedNumber}`;
+		if (req.params.room !== expectedRoomId) {
+			res.status(422).send({
+				error: "Validation failed",
+				fields: {
+					number: "must match room resource in path",
+				},
+			});
+			return;
+		}
+
 		const model = new Model(datadir);
 		const out = await model.setRoom(req.params.building, req.params.room, {
-			building: req.body.building,
-			number: req.body.number,
-			type: req.body.type,
-			furniture: req.body.furniture,
-			href: req.body.href,
+			building: normalizedBuilding,
+			number: normalizedNumber,
+			type: normalizedType,
+			furniture: normalizedFurniture,
+			href: normalizedHref,
 			seats: req.body.seats,
 		});
 
@@ -1114,6 +1157,81 @@ class Model {
 		return room;
 	}
 
+	private upsertBuildingInMemory(
+		buildingId: string,
+		name: string,
+		address: string,
+		lat: number,
+		lon: number
+	): { existed: boolean; changed: boolean } {
+		const existing = this.data.buildings[buildingId];
+
+		const next: Building = {
+			id: buildingId,
+			name,
+			address,
+			lat,
+			lon,
+		};
+
+		if (!existing) {
+			this.data.buildings[buildingId] = next;
+			if (!this.data.rooms[buildingId]) {
+				this.data.rooms[buildingId] = {};
+			}
+			return { existed: false, changed: true };
+		}
+
+		const changed =
+			existing.name !== next.name ||
+			existing.address !== next.address ||
+			existing.lat !== next.lat ||
+			existing.lon !== next.lon;
+
+		if (changed) {
+			this.data.buildings[buildingId] = next;
+		}
+		if (!this.data.rooms[buildingId]) {
+			this.data.rooms[buildingId] = {};
+		}
+		return { existed: true, changed };
+	}
+
+	private upsertRoomInMemory(
+		buildingId: string,
+		roomId: string,
+		payload: Omit<Room, "id">
+	): { existed: boolean; changed: boolean } {
+		if (!this.data.rooms[buildingId]) {
+			this.data.rooms[buildingId] = {};
+		}
+
+		const existing = this.data.rooms[buildingId][roomId];
+		const next: Room = {
+			id: roomId,
+			...payload,
+		};
+
+		if (!existing) {
+			this.data.rooms[buildingId][roomId] = next;
+			return { existed: false, changed: true };
+		}
+
+		const changed =
+			existing.building !== next.building ||
+			existing.number !== next.number ||
+			existing.type !== next.type ||
+			existing.furniture !== next.furniture ||
+			existing.href !== next.href ||
+			existing.seats !== next.seats;
+
+		if (changed) {
+			this.data.rooms[buildingId][roomId] = next;
+		}
+
+		return { existed: true, changed };
+	}
+
 	// ============================================================
 	// dataset jobs
 	// ============================================================
@@ -1169,8 +1287,8 @@ class Model {
 		await this.save();
 	}
 
-	async completeFacilitiesDatasetJob(id: string): Promise<void> {
-		await this.completeDatasetJob(id, this.emptyStats());
+	async completeFacilitiesDatasetJob(id: string, stats: UploadStats): Promise<void> {
+		await this.completeDatasetJob(id, stats);
 	}
 
 	async processCourseOfferingsZip(id: string, zip: JSZip): Promise<void> {
@@ -1801,6 +1919,10 @@ class Model {
 		const job = this.data.datasets[id];
 		if (!job) return;
 
+		const stats = this.emptyStats();
+		const allFiles = Object.keys(zip.files).filter((name) => !zip.files[name].dir);
+		stats.files_total = allFiles.length;
+
 		const indexFile = zip.files["index.htm"];
 		if (!indexFile) {
 			await this.failDatasetJob(id, "Missing index.htm file");
@@ -1811,6 +1933,7 @@ class Model {
 		try {
 			indexText = await indexFile.async("text");
 		} catch {
+			stats.files_skipped++;
 			await this.failDatasetJob(id, "index.htm could not be parsed");
 			return;
 		}
@@ -1819,6 +1942,7 @@ class Model {
 		try {
 			indexDoc = await this.parseHtml(indexText);
 		} catch {
+			stats.files_skipped++;
 			await this.failDatasetJob(id, "index.htm could not be parsed");
 			return;
 		}
@@ -1826,7 +1950,9 @@ class Model {
 		let buildings: Array<{ fullname: string; shortname: string; address: string; link: string }>;
 		try {
 			buildings = this.extractBuildingsFromIndex(indexDoc);
+			stats.files_processed++;
 		} catch (err: any) {
+			stats.files_skipped++;
 			if (err?.message === "No building table found in index.htm") {
 				await this.failDatasetJob(id, "No building table found in index.htm");
 				return;
@@ -1840,11 +1966,20 @@ class Model {
 				continue;
 			}
 
-			await this.setBuilding(b.shortname, b.fullname, b.address, geo.lat, geo.lon);
+			stats.courses_seen++;
+
+			const buildingResult = this.upsertBuildingInMemory(b.shortname, b.fullname, b.address, geo.lat, geo.lon);
+
+			if (!buildingResult.existed) {
+				stats.courses_added++;
+			} else if (buildingResult.changed) {
+				stats.courses_modified++;
+			}
 
 			const relativePath = b.link.replace(/^\.\//, "");
 			const roomFile = zip.files[relativePath];
 			if (!roomFile) {
+				stats.files_skipped++;
 				continue;
 			}
 
@@ -1852,6 +1987,7 @@ class Model {
 			try {
 				roomText = await roomFile.async("text");
 			} catch {
+				stats.files_skipped++;
 				continue;
 			}
 
@@ -1859,13 +1995,18 @@ class Model {
 			try {
 				roomDoc = await this.parseHtml(roomText);
 			} catch {
+				stats.files_skipped++;
 				continue;
 			}
 
 			const rooms = this.extractRoomsFromPage(roomDoc);
+			stats.files_processed++;
+
 			for (const r of rooms) {
 				const roomId = `${b.shortname}_${r.number}`;
-				await this.setRoom(b.shortname, roomId, {
+				stats.sections_seen++;
+
+				const roomResult = this.upsertRoomInMemory(b.shortname, roomId, {
 					building: b.shortname,
 					number: r.number,
 					seats: r.seats,
@@ -1873,10 +2014,17 @@ class Model {
 					furniture: r.furniture,
 					href: r.href,
 				});
+
+				if (!roomResult.existed) {
+					stats.sections_added++;
+				} else if (roomResult.changed) {
+					stats.sections_modified++;
+				}
 			}
 		}
 
-		await this.completeFacilitiesDatasetJob(id);
+		await this.save();
+		await this.completeFacilitiesDatasetJob(id, stats);
 	}
 }
 
