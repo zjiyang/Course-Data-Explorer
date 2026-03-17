@@ -946,39 +946,45 @@ describe("REST API v1", function () {
 
 		// LT branch
 		{
-			const res = await request(app).post("/api/v1/search").send({
-				kind: "course_offerings",
-				query: {
-					WHERE: { LT: { avg: 80 } },
-					OPTIONS: { COLUMNS: ["dept", "avg", "instructor"], ORDER: "avg" },
-				},
-			});
+			const res = await request(app)
+				.post("/api/v1/search")
+				.send({
+					kind: "course_offerings",
+					query: {
+						WHERE: { LT: { avg: 80 } },
+						OPTIONS: { COLUMNS: ["dept", "avg", "instructor"], ORDER: "avg" },
+					},
+				});
 			expect(res).to.have.property("status", OK);
 			expect(res.body).to.be.an("array").that.is.not.empty;
 		}
 
 		// EQ branch
 		{
-			const res = await request(app).post("/api/v1/search").send({
-				kind: "course_offerings",
-				query: {
-					WHERE: { EQ: { pass: 167 } },
-					OPTIONS: { COLUMNS: ["pass", "dept"] },
-				},
-			});
+			const res = await request(app)
+				.post("/api/v1/search")
+				.send({
+					kind: "course_offerings",
+					query: {
+						WHERE: { EQ: { pass: 167 } },
+						OPTIONS: { COLUMNS: ["pass", "dept"] },
+					},
+				});
 			expect(res).to.have.property("status", OK);
 			expect(res.body).to.be.an("array").that.is.not.empty;
 		}
 
 		// IS wildcard branch (* at end / start)
 		{
-			const res = await request(app).post("/api/v1/search").send({
-				kind: "course_offerings",
-				query: {
-					WHERE: { IS: { instructor: "*reid" } }, // endsWith
-					OPTIONS: { COLUMNS: ["instructor"] },
-				},
-			});
+			const res = await request(app)
+				.post("/api/v1/search")
+				.send({
+					kind: "course_offerings",
+					query: {
+						WHERE: { IS: { instructor: "*reid" } }, // endsWith
+						OPTIONS: { COLUMNS: ["instructor"] },
+					},
+				});
 			expect(res).to.have.property("status", OK);
 			expect(res.body).to.be.an("array").that.is.not.empty;
 		}
