@@ -92,8 +92,6 @@ async function seedManyCourseSections(n: number): Promise<void> {
 		};
 	}
 
-	// v2 implementation will likely extend db.json shape.
-	// Keep extra top-level keys harmless if implementation ignores them.
 	const db = {
 		courses: { [courseId]: course },
 		sections: { [courseId]: sections },
@@ -137,8 +135,6 @@ async function createRoom(
 		});
 }
 
-// This is only a minimal/future-facing helper for facilities upload validation/failure tests.
-// Success parsing tests are best added after you inspect the real campus.zip DOM/classes.
 async function makeMinimalFacilitiesZip(filesAtRoot: Record<string, string>): Promise<Buffer> {
 	const zip = new JSZip();
 	for (const [path, content] of Object.entries(filesAtRoot)) {
@@ -365,10 +361,7 @@ describe("REST API v2", function () {
 			const done = await waitForProcessingV2(app, postRes.body.id);
 			expect(done.status).to.equal(OK);
 			expect(done.body).to.have.property("status", "failed");
-			expect(done.body.message).to.be.oneOf([
-				"Missing root courses directory",
-				"Missing root rooms directory", // defensive, in case routing is wrong during refactor
-			]);
+			expect(done.body.message).to.be.oneOf(["Missing root courses directory", "Missing root rooms directory"]);
 		});
 	});
 
@@ -642,7 +635,6 @@ describe("REST API v2", function () {
 
 	describe("v2 search execution", function () {
 		beforeEach(async () => {
-			// seed course data via existing v1 endpoints
 			await request(app).put("/api/v1/courses/cpsc310").send({
 				title: "Intro to SE",
 				dept: "cpsc",
@@ -676,7 +668,6 @@ describe("REST API v2", function () {
 				audit: 1,
 			});
 
-			// seed facilities data via new v2 endpoints
 			await createBuilding(app, "DMP", {
 				name: "Hugh Dempster Pavilion",
 				address: "6245 Agronomy Road V6T 1Z4",
@@ -1057,6 +1048,24 @@ describe("REST API v2", function () {
 			expect(res.body.fields).to.have.property("lon");
 		});
 
+		it("PUT /api/v2/buildings/{building} should reject empty string name and address", async () => {
+			const res = await request(app).put("/api/v2/buildings/DMP").send({
+				name: "   ",
+				address: "",
+				lat: 49.26125,
+				lon: -123.24807,
+			});
+
+			expect(res.status).to.equal(UNPROCESSABLE_ENTITY);
+			expect(res.body).to.deep.equal({
+				error: "Validation failed",
+				fields: {
+					name: "expected a non-empty string",
+					address: "expected a non-empty string",
+				},
+			});
+		});
+
 		it("DELETE /api/v2/buildings/{building} should remove building and return deleted room count", async () => {
 			await createBuilding(app, "DMP");
 			await createRoom(app, "DMP", "DMP_101", { number: "101", seats: 40 });
@@ -1237,6 +1246,85 @@ describe("REST API v2", function () {
 			expect(res.body.fields).to.have.property("seats");
 		});
 
+		it("PUT /api/v2/buildings/{building}/rooms/{room} should reject empty string fields", async () => {
+			const res = await request(app).put("/api/v2/buildings/DMP/rooms/DMP_101").send({
+				building: "DMP",
+				number: "   ",
+				type: "",
+				furniture: "   ",
+				href: "",
+				seats: 40,
+			});
+
+			expect(res.status).to.equal(UNPROCESSABLE_ENTITY);
+			expect(res.body).to.deep.equal({
+				error: "Validation failed",
+				fields: {
+					number: "expected a non-empty string",
+					type: "expected a non-empty string",
+					furniture: "expected a non-empty string",
+					href: "expected a non-empty string",
+				},
+			});
+		});
+
+		it("PUT /api/v2/buildings/{building}/rooms/{room} should reject body building that does not match path", async () => {
+			const res = await request(app).put("/api/v2/buildings/DMP/rooms/DMP_101").send({
+				building: "ORCH",
+				number: "101",
+				type: "Open Design General Purpose",
+				furniture: "Classroom-Movable Tables & Chairs",
+				href: "http://students.ubc.ca/campus/discover/buildings-and-classrooms/room/DMP-101",
+				seats: 40,
+			});
+
+			expect(res.status).to.equal(UNPROCESSABLE_ENTITY);
+			expect(res.body).to.deep.equal({
+				error: "Validation failed",
+				fields: {
+					building: "must match building resource in path",
+				},
+			});
+		});
+
+		it("PUT /api/v2/buildings/{building}/rooms/{room} should reject room id that does not match building and number", async () => {
+			const res = await request(app).put("/api/v2/buildings/DMP/rooms/DMP_999").send({
+				building: "DMP",
+				number: "101",
+				type: "Open Design General Purpose",
+				furniture: "Classroom-Movable Tables & Chairs",
+				href: "http://students.ubc.ca/campus/discover/buildings-and-classrooms/room/DMP-101",
+				seats: 40,
+			});
+
+			expect(res.status).to.equal(UNPROCESSABLE_ENTITY);
+			expect(res.body).to.deep.equal({
+				error: "Validation failed",
+				fields: {
+					number: "must match room resource in path",
+				},
+			});
+		});
+
+		it("PUT /api/v2/buildings/{building}/rooms/{room} should reject negative seats", async () => {
+			const res = await request(app).put("/api/v2/buildings/DMP/rooms/DMP_101").send({
+				building: "DMP",
+				number: "101",
+				type: "Open Design General Purpose",
+				furniture: "Classroom-Movable Tables & Chairs",
+				href: "http://students.ubc.ca/campus/discover/buildings-and-classrooms/room/DMP-101",
+				seats: -1,
+			});
+
+			expect(res.status).to.equal(UNPROCESSABLE_ENTITY);
+			expect(res.body).to.deep.equal({
+				error: "Validation failed",
+				fields: {
+					seats: "expected a number >= 0",
+				},
+			});
+		});
+
 		it("DELETE /api/v2/buildings/{building}/rooms/{room} should return deleted room data", async () => {
 			await createRoom(app, "DMP", "DMP_101", { number: "101", seats: 40 });
 
@@ -1271,6 +1359,10 @@ describe("REST API v2", function () {
 			});
 		});
 	});
+
+	// ============================================================
+	// Facilities upload processing
+	// ============================================================
 
 	describe("v2 facilities upload processing", function () {
 		it("POST /api/v2/datasets should fail facilities processing when index.htm is missing", async () => {
@@ -1325,7 +1417,6 @@ describe("REST API v2", function () {
 
 			const zipBuf = await makeMinimalFacilitiesZip({
 				"index.htm": indexHtml,
-				// intentionally missing linked room file
 			});
 
 			const postRes = await request(app)
@@ -1337,9 +1428,18 @@ describe("REST API v2", function () {
 
 			const done = await waitForProcessingV2(app, postRes.body.id);
 			expect(done.status).to.equal(OK);
-
-			// after real facilities implementation, this should complete and create the building
 			expect(done.body.status).to.equal("completed");
+			expect(done.body.stats).to.deep.equal({
+				files_total: 1,
+				files_processed: 1,
+				files_skipped: 1,
+				courses_seen: 1,
+				courses_added: 1,
+				courses_modified: 0,
+				sections_seen: 0,
+				sections_added: 0,
+				sections_modified: 0,
+			});
 
 			const buildingRes = await request(app).get("/api/v2/buildings/DMP");
 			expect(buildingRes.status).to.equal(OK);
@@ -1389,6 +1489,17 @@ describe("REST API v2", function () {
 			const done = await waitForProcessingV2(app, postRes.body.id);
 			expect(done.status).to.equal(OK);
 			expect(done.body.status).to.equal("completed");
+			expect(done.body.stats).to.deep.equal({
+				files_total: 2,
+				files_processed: 2,
+				files_skipped: 0,
+				courses_seen: 1,
+				courses_added: 1,
+				courses_modified: 0,
+				sections_seen: 1,
+				sections_added: 1,
+				sections_modified: 0,
+			});
 
 			const buildingRes = await request(app).get("/api/v2/buildings/DMP");
 			expect(buildingRes.status).to.equal(OK);
@@ -1408,6 +1519,99 @@ describe("REST API v2", function () {
 				type: "Open Design General Purpose",
 				furniture: "Classroom-Movable Tables & Chairs",
 				href: "http://students.ubc.ca/campus/discover/buildings-and-classrooms/room/DMP-101",
+			});
+		});
+
+		it("POST /api/v2/datasets should mark existing facilities resources as modified on re-upload", async () => {
+			const indexHtml = makeIndexHtmlWithBuildings(
+				makeBuildingRow(
+					"Hugh Dempster Pavilion",
+					"DMP",
+					"6245 Agronomy Road V6T 1Z4",
+					"./campus/discover/buildings-and-classrooms/DMP.htm"
+				)
+			);
+
+			const roomHtml1 = makeRoomPage(
+				makeRoomRow(
+					"101",
+					"40",
+					"Classroom-Movable Tables & Chairs",
+					"Open Design General Purpose",
+					"http://students.ubc.ca/campus/discover/buildings-and-classrooms/room/DMP-101"
+				)
+			);
+
+			const roomHtml2 = makeRoomPage(
+				makeRoomRow(
+					"101",
+					"45",
+					"Classroom-Movable Tables & Chairs",
+					"Small Group",
+					"http://students.ubc.ca/campus/discover/buildings-and-classrooms/room/DMP-101"
+				)
+			);
+
+			const zipBuf1 = await makeMinimalFacilitiesZip({
+				"index.htm": indexHtml,
+				"campus/discover/buildings-and-classrooms/DMP.htm": roomHtml1,
+			});
+
+			const zipBuf2 = await makeMinimalFacilitiesZip({
+				"index.htm": indexHtml,
+				"campus/discover/buildings-and-classrooms/DMP.htm": roomHtml2,
+			});
+
+			const postRes1 = await request(app)
+				.post("/api/v2/datasets")
+				.field("kind", "facilities")
+				.attach("archive", zipBuf1, "facilities-first.zip");
+
+			expect(postRes1.status).to.equal(ACCEPTED);
+			const done1 = await waitForProcessingV2(app, postRes1.body.id);
+			expect(done1.status).to.equal(OK);
+			expect(done1.body.status).to.equal("completed");
+			expect(done1.body.stats).to.deep.equal({
+				files_total: 2,
+				files_processed: 2,
+				files_skipped: 0,
+				courses_seen: 1,
+				courses_added: 1,
+				courses_modified: 0,
+				sections_seen: 1,
+				sections_added: 1,
+				sections_modified: 0,
+			});
+
+			const postRes2 = await request(app)
+				.post("/api/v2/datasets")
+				.field("kind", "facilities")
+				.attach("archive", zipBuf2, "facilities-second.zip");
+
+			expect(postRes2.status).to.equal(ACCEPTED);
+			const done2 = await waitForProcessingV2(app, postRes2.body.id);
+			expect(done2.status).to.equal(OK);
+			expect(done2.body.status).to.equal("completed");
+			expect(done2.body.stats).to.deep.equal({
+				files_total: 2,
+				files_processed: 2,
+				files_skipped: 0,
+				courses_seen: 1,
+				courses_added: 0,
+				courses_modified: 0,
+				sections_seen: 1,
+				sections_added: 0,
+				sections_modified: 1,
+			});
+
+			const roomRes = await request(app).get("/api/v2/buildings/DMP/rooms/DMP_101");
+			expect(roomRes.status).to.equal(OK);
+			expect(roomRes.body).to.include({
+				id: "DMP_101",
+				building: "DMP",
+				number: "101",
+				seats: 45,
+				type: "Small Group",
 			});
 		});
 	});
