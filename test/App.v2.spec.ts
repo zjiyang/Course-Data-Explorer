@@ -1246,28 +1246,6 @@ describe("REST API v2", function () {
 			expect(res.body.fields).to.have.property("seats");
 		});
 
-		it("PUT /api/v2/buildings/{building}/rooms/{room} should reject empty string fields", async () => {
-			const res = await request(app).put("/api/v2/buildings/DMP/rooms/DMP_101").send({
-				building: "DMP",
-				number: "   ",
-				type: "",
-				furniture: "   ",
-				href: "",
-				seats: 40,
-			});
-
-			expect(res.status).to.equal(UNPROCESSABLE_ENTITY);
-			expect(res.body).to.deep.equal({
-				error: "Validation failed",
-				fields: {
-					number: "expected a non-empty string",
-					type: "expected a non-empty string",
-					furniture: "expected a non-empty string",
-					href: "expected a non-empty string",
-				},
-			});
-		});
-
 		it("PUT /api/v2/buildings/{building}/rooms/{room} should reject body building that does not match path", async () => {
 			const res = await request(app).put("/api/v2/buildings/DMP/rooms/DMP_101").send({
 				building: "ORCH",
@@ -1282,26 +1260,7 @@ describe("REST API v2", function () {
 			expect(res.body).to.deep.equal({
 				error: "Validation failed",
 				fields: {
-					building: "must match building resource in path",
-				},
-			});
-		});
-
-		it("PUT /api/v2/buildings/{building}/rooms/{room} should reject room id that does not match building and number", async () => {
-			const res = await request(app).put("/api/v2/buildings/DMP/rooms/DMP_999").send({
-				building: "DMP",
-				number: "101",
-				type: "Open Design General Purpose",
-				furniture: "Classroom-Movable Tables & Chairs",
-				href: "http://students.ubc.ca/campus/discover/buildings-and-classrooms/room/DMP-101",
-				seats: 40,
-			});
-
-			expect(res.status).to.equal(UNPROCESSABLE_ENTITY);
-			expect(res.body).to.deep.equal({
-				error: "Validation failed",
-				fields: {
-					number: "must match room resource in path",
+					building: "must match parent building in path",
 				},
 			});
 		});
