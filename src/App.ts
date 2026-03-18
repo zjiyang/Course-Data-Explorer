@@ -767,7 +767,7 @@ export async function createApp(config: AppConfig): Promise<Application> {
 	app.put("/api/v2/buildings/:building/rooms/:room", async (req, res) => {
 		const fields: Record<string, string> = {};
 
-		if (!req.body || typeof req.body !== "object" || req.body === null) {
+		if (!req.body || typeof req.body !== "object" || req.body === null || Array.isArray(req.body)) {
 			res.status(422).send({
 				error: "Validation failed",
 				fields: {
@@ -783,33 +783,29 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		}
 
 		if (req.body.building === undefined) fields.building = "required but missing";
-		else if (typeof req.body.building !== "string" || req.body.building.trim().length === 0) {
-			fields.building = "expected a non-empty string";
-		}
+		else if (typeof req.body.building !== "string") fields.building = "expected a string";
 
 		if (req.body.number === undefined) fields.number = "required but missing";
-		else if (typeof req.body.number !== "string" || req.body.number.trim().length === 0) {
-			fields.number = "expected a non-empty string";
-		}
+		else if (typeof req.body.number !== "string") fields.number = "expected a string";
 
 		if (req.body.type === undefined) fields.type = "required but missing";
-		else if (typeof req.body.type !== "string" || req.body.type.trim().length === 0) {
-			fields.type = "expected a non-empty string";
-		}
+		else if (typeof req.body.type !== "string") fields.type = "expected a string";
 
 		if (req.body.furniture === undefined) fields.furniture = "required but missing";
-		else if (typeof req.body.furniture !== "string" || req.body.furniture.trim().length === 0) {
-			fields.furniture = "expected a non-empty string";
-		}
+		else if (typeof req.body.furniture !== "string") fields.furniture = "expected a string";
 
 		if (req.body.href === undefined) fields.href = "required but missing";
-		else if (typeof req.body.href !== "string" || req.body.href.trim().length === 0) {
-			fields.href = "expected a non-empty string";
-		}
+		else if (typeof req.body.href !== "string") fields.href = "expected a string";
 
 		if (req.body.seats === undefined) fields.seats = "required but missing";
 		else if (!Number.isInteger(req.body.seats) || req.body.seats < 0) {
 			fields.seats = "expected a number >= 0";
+		}
+
+		if (req.body.building !== undefined && typeof req.body.building === "string") {
+			if (req.body.building !== req.params.building) {
+				fields.building = "must match parent building in path";
+			}
 		}
 
 		if (Object.keys(fields).length > 0) {
@@ -817,40 +813,13 @@ export async function createApp(config: AppConfig): Promise<Application> {
 			return;
 		}
 
-		if (req.body.building !== req.params.building) {
-			res.status(422).send({
-				error: "Validation failed",
-				fields: {
-					building: "must match building resource in path",
-				},
-			});
-			return;
-		}
-
-		const normalizedBuilding = req.params.building;
-		const normalizedNumber = req.body.number.trim();
-		const normalizedType = req.body.type.trim();
-		const normalizedFurniture = req.body.furniture.trim();
-		const normalizedHref = req.body.href.trim();
-
-		const expectedRoomId = `${normalizedBuilding}_${normalizedNumber}`;
-		if (req.params.room !== expectedRoomId) {
-			res.status(422).send({
-				error: "Validation failed",
-				fields: {
-					number: "must match room resource in path",
-				},
-			});
-			return;
-		}
-
 		const model = new Model(datadir);
 		const out = await model.setRoom(req.params.building, req.params.room, {
-			building: normalizedBuilding,
-			number: normalizedNumber,
-			type: normalizedType,
-			furniture: normalizedFurniture,
-			href: normalizedHref,
+			building: req.body.building,
+			number: req.body.number,
+			type: req.body.type,
+			furniture: req.body.furniture,
+			href: req.body.href,
 			seats: req.body.seats,
 		});
 
@@ -1322,11 +1291,6 @@ class Model {
 		const deptByCourse: Record<string, string> = {};
 		const codeByCourse: Record<string, string> = {};
 
-		const toNum = (x: any): number | null => {
-			const n = typeof x === "number" ? x : typeof x === "string" ? Number(x) : NaN;
-			return Number.isFinite(n) ? n : null;
-		};
-
 		for (const fname of courseFiles) {
 			let text: string;
 			try {
@@ -1355,41 +1319,40 @@ class Model {
 				if (
 					!r ||
 					typeof r !== "object" ||
+					typeof r.id !== "string" ||
 					typeof r.Course !== "string" ||
 					typeof r.Title !== "string" ||
 					typeof r.Professor !== "string" ||
 					typeof r.Subject !== "string" ||
 					typeof r.Section !== "string" ||
-					typeof r.Year !== "string"
+					typeof r.Year !== "string" ||
+					typeof r.Avg !== "number" ||
+					typeof r.Pass !== "number" ||
+					typeof r.Fail !== "number" ||
+					typeof r.Audit !== "number"
 				) {
 					continue;
 				}
 
-				const idNum = toNum(r.id);
-				if (idNum === null) continue;
-				const idStr = String(idNum);
+				const yearNum = Number(r.Year);
+				if (!Number.isFinite(yearNum)) continue;
 
-				const yearNum = toNum(r.Year);
-				const avgNum = toNum(r.Avg);
-				const passNum = toNum(r.Pass);
-				const failNum = toNum(r.Fail);
-				const auditNum = toNum(r.Audit);
-
-				if (yearNum === null || avgNum === null || passNum === null || failNum === null || auditNum === null) continue;
-				if (!Number.isInteger(passNum) || !Number.isInteger(failNum) || !Number.isInteger(auditNum)) continue;
+				if (!Number.isInteger(r.Pass) || !Number.isInteger(r.Fail) || !Number.isInteger(r.Audit)) {
+					continue;
+				}
 
 				const normalized: Offering = {
-					id: idStr,
+					id: r.id,
 					Course: r.Course,
 					Title: r.Title,
 					Professor: r.Professor,
 					Subject: r.Subject,
 					Section: r.Section,
 					Year: r.Year,
-					Avg: avgNum,
-					Pass: passNum,
-					Fail: failNum,
-					Audit: auditNum,
+					Avg: r.Avg,
+					Pass: r.Pass,
+					Fail: r.Fail,
+					Audit: r.Audit,
 				};
 
 				const courseId = `${normalized.Subject}${normalized.Course}`;
