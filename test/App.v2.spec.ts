@@ -1391,13 +1391,13 @@ describe("REST API v2", function () {
 			expect(done.body.stats).to.deep.equal({
 				files_total: 1,
 				files_processed: 1,
-				files_skipped: 1,
-				courses_seen: 1,
-				courses_added: 1,
-				courses_modified: 0,
-				sections_seen: 0,
-				sections_added: 0,
-				sections_modified: 0,
+				files_skipped: 0,
+				buildings_seen: 1,
+				buildings_added: 1,
+				buildings_modified: 0,
+				rooms_seen: 0,
+				rooms_added: 0,
+				rooms_modified: 0,
 			});
 
 			const buildingRes = await request(app).get("/api/v2/buildings/DMP");
@@ -1452,12 +1452,12 @@ describe("REST API v2", function () {
 				files_total: 2,
 				files_processed: 2,
 				files_skipped: 0,
-				courses_seen: 1,
-				courses_added: 1,
-				courses_modified: 0,
-				sections_seen: 1,
-				sections_added: 1,
-				sections_modified: 0,
+				buildings_seen: 1,
+				buildings_added: 1,
+				buildings_modified: 0,
+				rooms_seen: 1,
+				rooms_added: 1,
+				rooms_modified: 0,
 			});
 
 			const buildingRes = await request(app).get("/api/v2/buildings/DMP");
@@ -1534,12 +1534,12 @@ describe("REST API v2", function () {
 				files_total: 2,
 				files_processed: 2,
 				files_skipped: 0,
-				courses_seen: 1,
-				courses_added: 1,
-				courses_modified: 0,
-				sections_seen: 1,
-				sections_added: 1,
-				sections_modified: 0,
+				buildings_seen: 1,
+				buildings_added: 1,
+				buildings_modified: 0,
+				rooms_seen: 1,
+				rooms_added: 1,
+				rooms_modified: 0,
 			});
 
 			const postRes2 = await request(app)
@@ -1555,12 +1555,12 @@ describe("REST API v2", function () {
 				files_total: 2,
 				files_processed: 2,
 				files_skipped: 0,
-				courses_seen: 1,
-				courses_added: 0,
-				courses_modified: 0,
-				sections_seen: 1,
-				sections_added: 0,
-				sections_modified: 1,
+				buildings_seen: 1,
+				buildings_added: 0,
+				buildings_modified: 0,
+				rooms_seen: 1,
+				rooms_added: 0,
+				rooms_modified: 1,
 			});
 
 			const roomRes = await request(app).get("/api/v2/buildings/DMP/rooms/DMP_101");
