@@ -888,7 +888,7 @@ type Room = {
 	seats: number;
 };
 
-type UploadStats = {
+type CourseUploadStats = {
 	files_total: number;
 	files_processed: number;
 	files_skipped: number;
@@ -899,6 +899,20 @@ type UploadStats = {
 	sections_added: number;
 	sections_modified: number;
 };
+
+type FacilitiesUploadStats = {
+	files_total: number;
+	files_processed: number;
+	files_skipped: number;
+	buildings_seen: number;
+	buildings_added: number;
+	buildings_modified: number;
+	rooms_seen: number;
+	rooms_added: number;
+	rooms_modified: number;
+};
+
+type UploadStats = CourseUploadStats | FacilitiesUploadStats;
 
 type DatasetKind = "course_offerings" | "facilities";
 
@@ -1205,7 +1219,7 @@ class Model {
 	// dataset jobs
 	// ============================================================
 
-	private emptyStats(): UploadStats {
+	private emptyCourseStats(): CourseUploadStats {
 		return {
 			files_total: 0,
 			files_processed: 0,
@@ -1219,13 +1233,31 @@ class Model {
 		};
 	}
 
+	private emptyFacilitiesStats(): FacilitiesUploadStats {
+		return {
+			files_total: 0,
+			files_processed: 0,
+			files_skipped: 0,
+			buildings_seen: 0,
+			buildings_added: 0,
+			buildings_modified: 0,
+			rooms_seen: 0,
+			rooms_added: 0,
+			rooms_modified: 0,
+		};
+	}
+
+	private emptyStatsForKind(kind: DatasetKind): UploadStats {
+		return kind === "course_offerings" ? this.emptyCourseStats() : this.emptyFacilitiesStats();
+	}
+
 	async createDatasetJob(id: string, kind: DatasetKind = "course_offerings"): Promise<void> {
 		await this.load();
 		this.data.datasets[id] = {
 			id,
 			status: "processing",
 			kind,
-			stats: this.emptyStats(),
+			stats: this.emptyStatsForKind(kind),
 			message: "Processing in progress",
 		};
 		await this.save();
@@ -1242,7 +1274,7 @@ class Model {
 		if (!job) return;
 		job.status = "failed";
 		job.message = message;
-		job.stats = this.emptyStats();
+		job.stats = this.emptyStatsForKind(job.kind);
 		await this.save();
 	}
 
@@ -1256,16 +1288,12 @@ class Model {
 		await this.save();
 	}
 
-	async completeFacilitiesDatasetJob(id: string, stats: UploadStats): Promise<void> {
-		await this.completeDatasetJob(id, stats);
-	}
-
 	async processCourseOfferingsZip(id: string, zip: JSZip): Promise<void> {
 		await this.load();
 		const job = this.data.datasets[id];
 		if (!job) return;
 
-		const stats = this.emptyStats();
+		const stats = this.emptyCourseStats();
 
 		const courseFiles = Object.keys(zip.files).filter((n) => n.startsWith("courses/") && !zip.files[n].dir);
 		stats.files_total = courseFiles.length;
@@ -1848,10 +1876,10 @@ class Model {
 			const seatsRaw = this.getTextContent(seatsCell).trim();
 			const furniture = this.getTextContent(furnitureCell).trim();
 			const type = this.getTextContent(typeCell).trim();
-			const href = this.getAttr(hrefA, "href") ?? "";
+			const href = (this.getAttr(hrefA, "href") ?? "").trim();
 
 			const seats = Number(seatsRaw);
-			if (!number || !Number.isFinite(seats) || !furniture || !type || !href) continue;
+			if (!number || !Number.isInteger(seats) || seats < 0) continue;
 
 			rooms.push({ number, seats, furniture, type, href });
 		}
@@ -1882,7 +1910,7 @@ class Model {
 		const job = this.data.datasets[id];
 		if (!job) return;
 
-		const stats = this.emptyStats();
+		const stats = this.emptyFacilitiesStats();
 		const allFiles = Object.keys(zip.files).filter((name) => !zip.files[name].dir);
 		stats.files_total = allFiles.length;
 
@@ -1896,7 +1924,6 @@ class Model {
 		try {
 			indexText = await indexFile.async("text");
 		} catch {
-			stats.files_skipped++;
 			await this.failDatasetJob(id, "index.htm could not be parsed");
 			return;
 		}
@@ -1905,7 +1932,6 @@ class Model {
 		try {
 			indexDoc = await this.parseHtml(indexText);
 		} catch {
-			stats.files_skipped++;
 			await this.failDatasetJob(id, "index.htm could not be parsed");
 			return;
 		}
@@ -1915,7 +1941,6 @@ class Model {
 			buildings = this.extractBuildingsFromIndex(indexDoc);
 			stats.files_processed++;
 		} catch (err: any) {
-			stats.files_skipped++;
 			if (err?.message === "No building table found in index.htm") {
 				await this.failDatasetJob(id, "No building table found in index.htm");
 				return;
@@ -1929,20 +1954,31 @@ class Model {
 				continue;
 			}
 
-			stats.courses_seen++;
+			if (
+				typeof b.fullname !== "string" ||
+				typeof b.shortname !== "string" ||
+				typeof b.address !== "string" ||
+				typeof geo.lat !== "number" ||
+				typeof geo.lon !== "number" ||
+				!Number.isFinite(geo.lat) ||
+				!Number.isFinite(geo.lon)
+			) {
+				continue;
+			}
+
+			stats.buildings_seen++;
 
 			const buildingResult = this.upsertBuildingInMemory(b.shortname, b.fullname, b.address, geo.lat, geo.lon);
 
 			if (!buildingResult.existed) {
-				stats.courses_added++;
+				stats.buildings_added++;
 			} else if (buildingResult.changed) {
-				stats.courses_modified++;
+				stats.buildings_modified++;
 			}
 
-			const relativePath = b.link.replace(/^\.\//, "");
+			const relativePath = b.link.replace(/^\.?\//, "").replace(/^\/+/, "");
 			const roomFile = zip.files[relativePath];
 			if (!roomFile) {
-				stats.files_skipped++;
 				continue;
 			}
 
@@ -1950,7 +1986,6 @@ class Model {
 			try {
 				roomText = await roomFile.async("text");
 			} catch {
-				stats.files_skipped++;
 				continue;
 			}
 
@@ -1958,7 +1993,6 @@ class Model {
 			try {
 				roomDoc = await this.parseHtml(roomText);
 			} catch {
-				stats.files_skipped++;
 				continue;
 			}
 
@@ -1967,7 +2001,19 @@ class Model {
 
 			for (const r of rooms) {
 				const roomId = `${b.shortname}_${r.number}`;
-				stats.sections_seen++;
+
+				if (
+					typeof r.number !== "string" ||
+					typeof r.furniture !== "string" ||
+					typeof r.type !== "string" ||
+					typeof r.href !== "string" ||
+					!Number.isInteger(r.seats) ||
+					r.seats < 0
+				) {
+					continue;
+				}
+
+				stats.rooms_seen++;
 
 				const roomResult = this.upsertRoomInMemory(b.shortname, roomId, {
 					building: b.shortname,
@@ -1979,15 +2025,17 @@ class Model {
 				});
 
 				if (!roomResult.existed) {
-					stats.sections_added++;
+					stats.rooms_added++;
 				} else if (roomResult.changed) {
-					stats.sections_modified++;
+					stats.rooms_modified++;
 				}
 			}
 		}
 
+		stats.files_skipped = stats.files_total - stats.files_processed;
+
 		await this.save();
-		await this.completeFacilitiesDatasetJob(id, stats);
+		await this.completeDatasetJob(id, stats);
 	}
 }
 
