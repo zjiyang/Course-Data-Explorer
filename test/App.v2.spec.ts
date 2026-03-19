@@ -1389,13 +1389,8 @@ describe("REST API v2", function () {
 			expect(done.status).to.equal(OK);
 			expect(done.body.status).to.equal("completed");
 			expect(done.body.stats).to.deep.equal({
-				files_total: 1,
-				files_processed: 1,
-				files_skipped: 0,
-				buildings_seen: 1,
 				buildings_added: 1,
 				buildings_modified: 0,
-				rooms_seen: 0,
 				rooms_added: 0,
 				rooms_modified: 0,
 			});
@@ -1449,13 +1444,8 @@ describe("REST API v2", function () {
 			expect(done.status).to.equal(OK);
 			expect(done.body.status).to.equal("completed");
 			expect(done.body.stats).to.deep.equal({
-				files_total: 2,
-				files_processed: 2,
-				files_skipped: 0,
-				buildings_seen: 1,
 				buildings_added: 1,
 				buildings_modified: 0,
-				rooms_seen: 1,
 				rooms_added: 1,
 				rooms_modified: 0,
 			});
@@ -1531,13 +1521,8 @@ describe("REST API v2", function () {
 			expect(done1.status).to.equal(OK);
 			expect(done1.body.status).to.equal("completed");
 			expect(done1.body.stats).to.deep.equal({
-				files_total: 2,
-				files_processed: 2,
-				files_skipped: 0,
-				buildings_seen: 1,
 				buildings_added: 1,
 				buildings_modified: 0,
-				rooms_seen: 1,
 				rooms_added: 1,
 				rooms_modified: 0,
 			});
@@ -1552,13 +1537,8 @@ describe("REST API v2", function () {
 			expect(done2.status).to.equal(OK);
 			expect(done2.body.status).to.equal("completed");
 			expect(done2.body.stats).to.deep.equal({
-				files_total: 2,
-				files_processed: 2,
-				files_skipped: 0,
-				buildings_seen: 1,
 				buildings_added: 0,
 				buildings_modified: 0,
-				rooms_seen: 1,
 				rooms_added: 0,
 				rooms_modified: 1,
 			});
