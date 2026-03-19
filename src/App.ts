@@ -914,13 +914,8 @@ type CourseUploadStats = {
 };
 
 type FacilitiesUploadStats = {
-	files_total: number;
-	files_processed: number;
-	files_skipped: number;
-	buildings_seen: number;
 	buildings_added: number;
 	buildings_modified: number;
-	rooms_seen: number;
 	rooms_added: number;
 	rooms_modified: number;
 };
@@ -1248,13 +1243,8 @@ class Model {
 
 	private emptyFacilitiesStats(): FacilitiesUploadStats {
 		return {
-			files_total: 0,
-			files_processed: 0,
-			files_skipped: 0,
-			buildings_seen: 0,
 			buildings_added: 0,
 			buildings_modified: 0,
-			rooms_seen: 0,
 			rooms_added: 0,
 			rooms_modified: 0,
 		};
@@ -1901,8 +1891,9 @@ class Model {
 			const type = this.getTextContent(typeCell).trim();
 			const href = (this.getAttr(hrefA, "href") ?? "").trim();
 
-			const seats = Number(seatsRaw);
-			if (!number || !Number.isInteger(seats) || seats < 0 || !furniture || !type || !href) continue;
+			const seats = parseInt(seatsRaw, 10);
+			// Skip only if seats is not a non-negative integer; empty strings for other fields are NOT skipped
+			if (!number || !Number.isInteger(seats) || seats < 0) continue;
 
 			rooms.push({ number, seats, furniture, type, href });
 		}
@@ -1934,8 +1925,6 @@ class Model {
 		if (!job) return;
 
 		const stats = this.emptyFacilitiesStats();
-		const allFiles = Object.keys(zip.files).filter((name) => !zip.files[name].dir);
-		stats.files_total = allFiles.length;
 
 		const indexFile = zip.files["index.htm"];
 		if (!indexFile) {
@@ -1962,7 +1951,6 @@ class Model {
 		let buildings: Array<{ fullname: string; shortname: string; address: string; link: string }>;
 		try {
 			buildings = this.extractBuildingsFromIndex(indexDoc);
-			stats.files_processed++;
 		} catch (err: any) {
 			if (err?.message === "No building table found in index.htm") {
 				await this.failDatasetJob(id, "No building table found in index.htm");
@@ -1977,8 +1965,6 @@ class Model {
 				continue;
 			}
 
-			stats.buildings_seen++;
-
 			const buildingResult = this.upsertBuildingInMemory(b.shortname, b.fullname, b.address, geo.lat, geo.lon);
 
 			if (!buildingResult.existed) {
@@ -1987,7 +1973,8 @@ class Model {
 				stats.buildings_modified++;
 			}
 
-			const relativePath = b.link.replace(/^\.?\//, "").replace(/^\/+/, "");
+			// Normalize path: strip leading ./ or /
+			const relativePath = b.link.replace(/^\.?\/+/, "");
 			const roomFile = zip.files[relativePath];
 			if (!roomFile) {
 				continue;
@@ -2008,11 +1995,9 @@ class Model {
 			}
 
 			const rooms = this.extractRoomsFromPage(roomDoc);
-			stats.files_processed++;
 
 			for (const r of rooms) {
 				const roomId = `${b.shortname}_${r.number}`;
-				stats.rooms_seen++;
 
 				const roomResult = this.upsertRoomInMemory(b.shortname, roomId, {
 					building: b.shortname,
@@ -2030,8 +2015,6 @@ class Model {
 				}
 			}
 		}
-
-		stats.files_skipped = stats.files_total - stats.files_processed;
 
 		await this.save();
 		await this.completeDatasetJob(id, stats);
