@@ -432,8 +432,11 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		const fields: Record<string, string> = {};
 
 		const kind = req.body?.kind;
-		if (kind === undefined) fields.kind = "required but missing";
-		else if (kind !== "course_offerings" && kind !== "facilities") {
+		if (kind === undefined) {
+			fields.kind = "required but missing";
+		} else if (typeof kind !== "string") {
+			fields.kind = "expected a string";
+		} else if (kind !== "course_offerings" && kind !== "facilities") {
 			fields.kind = "expected to be course_offerings or facilities";
 		}
 
@@ -462,9 +465,18 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		});
 
 		setImmediate(async () => {
-			try {
-				const zip = await JSZip.loadAsync(buf);
+			let zip: JSZip;
 
+			// Step 1: Validate ZIP format exclusively
+			try {
+				zip = await JSZip.loadAsync(buf);
+			} catch {
+				await model.failDatasetJob(id, "Data is not in a valid zip format");
+				return;
+			}
+
+			// Step 2: Process contents (safely catch unexpected parse errors)
+			try {
 				if (datasetKind === "course_offerings") {
 					const fileNames = Object.keys(zip.files);
 					const hasCoursesDir =
@@ -480,9 +492,10 @@ export async function createApp(config: AppConfig): Promise<Application> {
 				}
 
 				await model.processFacilitiesZip(id, zip);
-				return;
-			} catch {
-				await model.failDatasetJob(id, "Data is not in a valid zip format");
+			} catch (err) {
+				console.error("Dataset processing error:", err);
+				// A fallback for unexpected processing errors so it doesn't falsely blame the zip format
+				await model.failDatasetJob(id, "Processing failed" as any);
 			}
 		});
 	});
