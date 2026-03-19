@@ -169,3 +169,29 @@ tbody td {
 tbody tr:hover {
 	background: #f2f4ff;
 }
+/* ── Insight tabs & panels ── */
+.insight-tab {
+	background: none;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	padding: 7px 14px;
+	font-size: 13px;
+	cursor: pointer;
+	color: var(--muted);
+}
+.insight-tab:hover { background: #f2f4ff; color: var(--text); }
+.insight-tab.active {
+	background: #3f51b5;
+	border-color: #3f51b5;
+	color: white;
+}
+
+.insight-use-case {
+	background: #f0f4ff;
+	border: 1px solid #c5cef7;
+	border-radius: 8px;
+	padding: 10px 14px;
+	font-size: 13px;
+	color: #333;
+	line-height: 1.6;
+}
