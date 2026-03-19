@@ -1319,6 +1319,11 @@ class Model {
 		const deptByCourse: Record<string, string> = {};
 		const codeByCourse: Record<string, string> = {};
 
+		const toNum = (x: any): number | null => {
+			const n = typeof x === "number" ? x : typeof x === "string" ? Number(x) : NaN;
+			return Number.isFinite(n) ? n : null;
+		};
+
 		for (const fname of courseFiles) {
 			let text: string;
 			try {
@@ -1347,40 +1352,45 @@ class Model {
 				if (
 					!r ||
 					typeof r !== "object" ||
-					typeof r.id !== "string" ||
 					typeof r.Course !== "string" ||
 					typeof r.Title !== "string" ||
 					typeof r.Professor !== "string" ||
 					typeof r.Subject !== "string" ||
 					typeof r.Section !== "string" ||
-					typeof r.Year !== "string" ||
-					typeof r.Avg !== "number" ||
-					typeof r.Pass !== "number" ||
-					typeof r.Fail !== "number" ||
-					typeof r.Audit !== "number"
+					typeof r.Year !== "string"
 				) {
 					continue;
 				}
 
-				const yearNum = Number(r.Year);
-				if (!Number.isFinite(yearNum)) continue;
+				const idNum = toNum(r.id);
+				if (idNum === null) continue;
+				const idStr = String(idNum);
 
-				if (!Number.isInteger(r.Pass) || !Number.isInteger(r.Fail) || !Number.isInteger(r.Audit)) {
+				const yearNum = toNum(r.Year);
+				const avgNum = toNum(r.Avg);
+				const passNum = toNum(r.Pass);
+				const failNum = toNum(r.Fail);
+				const auditNum = toNum(r.Audit);
+
+				if (yearNum === null || avgNum === null || passNum === null || failNum === null || auditNum === null) {
+					continue;
+				}
+				if (!Number.isInteger(passNum) || !Number.isInteger(failNum) || !Number.isInteger(auditNum)) {
 					continue;
 				}
 
 				const normalized: Offering = {
-					id: r.id,
+					id: idStr,
 					Course: r.Course,
 					Title: r.Title,
 					Professor: r.Professor,
 					Subject: r.Subject,
 					Section: r.Section,
 					Year: r.Year,
-					Avg: r.Avg,
-					Pass: r.Pass,
-					Fail: r.Fail,
-					Audit: r.Audit,
+					Avg: avgNum,
+					Pass: passNum,
+					Fail: failNum,
+					Audit: auditNum,
 				};
 
 				const courseId = `${normalized.Subject}${normalized.Course}`;
@@ -1879,7 +1889,7 @@ class Model {
 			const href = (this.getAttr(hrefA, "href") ?? "").trim();
 
 			const seats = Number(seatsRaw);
-			if (!number || !Number.isInteger(seats) || seats < 0) continue;
+			if (!number || !Number.isInteger(seats) || seats < 0 || !furniture || !type || !href) continue;
 
 			rooms.push({ number, seats, furniture, type, href });
 		}
@@ -1954,18 +1964,6 @@ class Model {
 				continue;
 			}
 
-			if (
-				typeof b.fullname !== "string" ||
-				typeof b.shortname !== "string" ||
-				typeof b.address !== "string" ||
-				typeof geo.lat !== "number" ||
-				typeof geo.lon !== "number" ||
-				!Number.isFinite(geo.lat) ||
-				!Number.isFinite(geo.lon)
-			) {
-				continue;
-			}
-
 			stats.buildings_seen++;
 
 			const buildingResult = this.upsertBuildingInMemory(b.shortname, b.fullname, b.address, geo.lat, geo.lon);
@@ -2001,18 +1999,6 @@ class Model {
 
 			for (const r of rooms) {
 				const roomId = `${b.shortname}_${r.number}`;
-
-				if (
-					typeof r.number !== "string" ||
-					typeof r.furniture !== "string" ||
-					typeof r.type !== "string" ||
-					typeof r.href !== "string" ||
-					!Number.isInteger(r.seats) ||
-					r.seats < 0
-				) {
-					continue;
-				}
-
 				stats.rooms_seen++;
 
 				const roomResult = this.upsertRoomInMemory(b.shortname, roomId, {
