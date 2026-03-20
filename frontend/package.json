@@ -2,6 +2,6 @@
 	"name": "insightubc-frontend",
 	"private": true,
 	"scripts": {
-	  "demo": "yarn --cwd .. start"
+	  "demo": "yarn --cwd .. start & node seed.js"
 	}
   }
