@@ -124,7 +124,13 @@ async function initFromServer() {
 	setText("table-meta", "Upload a dataset to begin.");
 	renderRows([]);
 	await loadDeptOptionsFromCourses();
-	initInsights().catch((e) => { try { setText("insight-error", formatErr(e)); } catch {} });
+	// If depts loaded successfully, try to render insights immediately
+	if (state.deptOptions.length > 0) {
+		initInsights().catch((e) => { try { setText("insight-error", formatErr(e)); } catch {} });
+	} else {
+		// Poll until data appears (seed.js may still be loading on first run)
+		scheduleInsightRetry();
+	}
 }
 
 // ----------------------------
@@ -191,6 +197,9 @@ async function handleUpload() {
 		await loadDeptOptionsFromCourses();
 		autoSelectFirstDeptIfNone();
 		await refreshTable();
+		// Re-render insights with fresh data
+		insightCache.allSections = null;
+		initInsights().catch((e) => { try { setText("insight-error", formatErr(e)); } catch {} });
 	} else {
 		showUploadStatus("Failed ❌");
 		showUploadError(finalJob.message || "Upload failed.");
@@ -576,6 +585,33 @@ function wireInsightTabs() {
 
 // ── Entry point ────────────────────────────────────────────────────────────
 
+let _insightRetryTimer = null;
+
+// Called when page loads with no data yet — polls until data appears then auto-renders
+function scheduleInsightRetry() {
+	if (_insightRetryTimer) return;
+	setText("insight-error", "Waiting for data to load… charts will appear automatically.");
+	let attempts = 0;
+	const MAX = 60; // 2 min total
+	_insightRetryTimer = setInterval(async () => {
+		attempts++;
+		try {
+			await loadDeptOptionsFromCourses();
+		} catch { /* ignore */ }
+		if (state.deptOptions.length > 0 || attempts >= MAX) {
+			clearInterval(_insightRetryTimer);
+			_insightRetryTimer = null;
+			if (state.deptOptions.length > 0) {
+				setText("insight-error", "");
+				insightCache.allSections = null; // reset cache so fresh fetch happens
+				initInsights().catch((e) => { try { setText("insight-error", formatErr(e)); } catch {} });
+			} else {
+				setText("insight-error", "No data available — upload a dataset to see insights.");
+			}
+		}
+	}, 2000);
+}
+
 async function initInsights() {
 	wireInsightTabs();
 	setText("insight-error", "");
@@ -610,7 +646,8 @@ async function fetchAllSectionsForInsights() {
 	for (const dept of depts) {
 		let rows;
 		try {
-			const res = await fetch("/api/v1/search", {
+			// Use v2 search (C2); falls back gracefully if endpoint not available
+			let res = await fetch("/api/v2/search", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
@@ -621,6 +658,20 @@ async function fetchAllSectionsForInsights() {
 					},
 				}),
 			});
+			// v1 fallback
+			if (res.status === 404) {
+				res = await fetch("/api/v1/search", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						kind: "course_offerings",
+						query: {
+							WHERE: { IS: { dept: dept } },
+							OPTIONS: { COLUMNS: ["dept", "code", "year", "avg", "pass", "fail", "audit"] },
+						},
+					}),
+				});
+			}
 			const payload = await safeJson(res);
 			if (!res.ok || !Array.isArray(payload)) continue;
 			rows = payload;
@@ -742,15 +793,23 @@ function buildInsight2() {
 
 	const render = () => renderInsight2(select.value);
 	select.onchange = render;
+	byId("i2-year-min").onchange = render;
+	byId("i2-year-max").onchange = render;
 	render();
 }
 
 function renderInsight2(dept) {
-	// Aggregate: yearly avg for this dept
+	const yearMinRaw = byId("i2-year-min").value.trim();
+	const yearMaxRaw = byId("i2-year-max").value.trim();
+	const yearMin = yearMinRaw !== "" ? Number(yearMinRaw) : -Infinity;
+	const yearMax = yearMaxRaw !== "" ? Number(yearMaxRaw) : Infinity;
+
+	// Aggregate: yearly avg for this dept within optional year range
 	const yearTotals = {};
 	for (const r of insightCache.allSections) {
 		if (r.dept !== dept || typeof r.avg !== "number") continue;
 		if (typeof r.year !== "number" || r.year < 2000) continue; // skip 1900 "overall" rows
+		if (r.year < yearMin || r.year > yearMax) continue;
 		const y = String(r.year);
 		if (!yearTotals[y]) yearTotals[y] = { sum: 0, count: 0 };
 		yearTotals[y].sum += r.avg;
