@@ -47,6 +47,35 @@ async function hasData() {
   }
 }
 
+function httpPost(urlPath, body, contentType) {
+  return new Promise((resolve, reject) => {
+    const buf = Buffer.from(body);
+    const req = http.request(
+      {
+        hostname: "localhost",
+        port: PORT,
+        path: urlPath,
+        method: "POST",
+        headers: {
+          "Content-Type": contentType,
+          "Content-Length": buf.length,
+        },
+      },
+      (res) => {
+        let raw = "";
+        res.on("data", (c) => (raw += c));
+        res.on("end", () => {
+          try { resolve({ status: res.statusCode, data: JSON.parse(raw) }); }
+          catch { resolve({ status: res.statusCode, data: {} }); }
+        });
+      }
+    );
+    req.on("error", reject);
+    req.write(buf);
+    req.end();
+  });
+}
+
 function uploadZip() {
   return new Promise((resolve, reject) => {
     const boundary = "----FormBoundary" + Date.now();
@@ -90,9 +119,13 @@ function uploadZip() {
 }
 
 async function pollJob(id) {
+  // Try v2 first (C2 spec), fall back to v1 for backwards compatibility
+  const pollPath = `/api/v2/datasets/${encodeURIComponent(id)}`;
+  const fallbackPath = `/api/v1/datasets/${encodeURIComponent(id)}`;
   for (let i = 0; i < 60; i++) {
     await wait(1000);
-    const res = await httpGet(`/api/v1/datasets/${encodeURIComponent(id)}`);
+    let res = await httpGet(pollPath);
+    if (res.status === 404) res = await httpGet(fallbackPath);
     console.log(`Job status: ${res.data.status}`);
     if (res.data.status === "completed" || res.data.status === "failed") return res.data;
   }

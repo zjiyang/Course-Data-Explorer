@@ -1,69 +1,78 @@
 # Frontend Visual Insights
 
-This frontend presents three visual insights based on the course dataset.  
-All charts are powered by backend data and designed to support decision-making at UBC.
+This frontend shows three visual insights based on the course dataset.  
+All charts are powered by backend data and are meant to help people at UBC make better academic decisions.
 
 ---
 
 ## Insight 1: Department Average Grades
 
 **Description:**  
-A horizontal bar chart showing the average grade for each department across all years.
+This chart shows the average grade for each department across all years using a horizontal bar chart.  
+You can sort the departments or limit the view (Top 20 / Top 40 / All) to keep things readable.
 
 **Why this visualization?**  
-A bar chart is ideal for comparing values across categories (departments). Sorting and limiting to top N improves readability and highlights key differences.
+Bar charts are great for comparing categories. Here, it makes it easy to quickly see which departments are higher or lower overall.
 
 **Decision Value:**  
-Department heads and academic planners can quickly identify which disciplines consistently have higher or lower average grades.  
-This can help flag departments for further review, such as potential grade inflation, grading inconsistencies, or areas where students may need additional academic support.
+UBC administrators (like deans or review committees) can quickly compare departments in one place.  
+If a department is consistently high, it might raise questions about grade inflation.  
+If it’s low, it might suggest students need more support or that the courses are especially challenging.
 
 ---
 
 ## Insight 2: Grade Trends Over Time
 
 **Description:**  
-A line chart showing how the average grade within a selected department changes over time.
+This line chart shows how the average grade in a department changes over time.  
+You can select a department and focus on a specific year range.
 
 **Why this visualization?**  
-A line chart effectively captures trends across years, allowing users to detect increases, decreases, or anomalies.
+Line charts are ideal for spotting trends. It’s much easier to see increases, drops, or unusual changes over time compared to a table.
 
 **Decision Value:**  
-Enrollment planners and academic administrators can monitor long-term grade trends within departments.  
-This helps detect grade inflation, policy changes, or unusual fluctuations, enabling proactive planning for course difficulty, evaluation standards, and resource allocation.
+Departments and curriculum committees can use this to see how grades evolve over the years.  
+For example, if a new course structure was introduced, they can check whether it had an impact.  
+It also helps identify long-term trends like grade inflation or sudden shifts.
 
 ---
 
 ## Insight 3: Grade Average vs Failure Rate
 
 **Description:**  
-A scatter plot where each point represents a course, with average grade on the x-axis and failure rate on the y-axis.
+This scatter plot shows each course as a point.  
+- X-axis = average grade  
+- Y-axis = failure rate  
+
+You can filter by department and set a minimum enrollment threshold.
 
 **Why this visualization?**  
-A scatter plot is ideal for analyzing relationships between two variables and identifying outliers.
+Scatter plots are useful for seeing relationships and spotting outliers.  
+In this case, it helps highlight courses that don’t behave as expected.
 
 **Decision Value:**  
-Student advisors and curriculum planners can identify courses with unusually high failure rates relative to their average grades.  
-This enables targeted interventions such as additional academic support, tutoring programs, or curriculum adjustments to improve student success.
+This is especially useful for student advisors and academic planners.  
+For example, a course might have a decent average but still fail a lot of students — which is a red flag.  
+This chart helps identify those courses so the school can provide support (like tutoring or course redesign).
 
 ---
 
 ## Interactivity
 
-All visualizations include interactive features:
+All charts are interactive:
 
-- Hover tooltips to display detailed values
-- Filtering by department
-- Sorting and limiting results (e.g., Top N departments)
-- Minimum enrollment thresholds for cleaner analysis
+- Hover to see detailed values
+- Filter by department
+- Sort and limit results (Top N)
+- Apply enrollment thresholds to clean up noisy data
 
-These interactions allow users to explore the data dynamically and focus on relevant subsets.
+This makes it easier to explore the data and focus on what matters.
 
 ---
 
 ## Backend Integration
 
-All visualizations fetch data from the backend via API calls.  
-No data is hardcoded in the frontend.  
-Charts automatically load when the page is opened, assuming datasets are available in the backend.
+All data is fetched from the backend through API calls.  
+Nothing is hardcoded in the frontend.  
 
----
+Charts load automatically once the required datasets are available in the backend.
