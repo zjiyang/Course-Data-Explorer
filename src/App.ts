@@ -4,6 +4,7 @@ import cors from "cors";
 import multer from "multer";
 import JSZip from "jszip";
 import Decimal from "decimal.js";
+import { handleErrors } from "./middleware";
 
 export type Application = ReturnType<typeof express>;
 
@@ -884,6 +885,7 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		});
 	});
 
+    app.use(handleErrors);
 	return app;
 }
 
