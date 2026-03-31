@@ -6,6 +6,7 @@ import JSZip from "jszip";
 import Decimal from "decimal.js";
 import { handleErrors, parsePagination } from "./middleware";
 import { NotFoundError } from "./models/errors";
+import { acceptV2DatasetUpload } from "./services/datasets";
 
 export type Application = ReturnType<typeof express>;
 
@@ -456,55 +457,16 @@ export async function createApp(config: AppConfig): Promise<Application> {
 			return;
 		}
 
-		const datasetKind = kind as DatasetKind;
-		const buf = file!.buffer;
-
+		const uploadedFile = req.file!;
 		const model = new Model(datadir);
-		const id = `upload_${Date.now()}_${Math.floor(Math.random() * 1_000_000)}`;
 
-		await model.createDatasetJob(id, datasetKind);
-
-		res.status(202).send({
-			id,
-			status: "processing",
-			kind: datasetKind,
-			message: "Dataset accepted for processing",
+		const accepted = await acceptV2DatasetUpload({
+			kind: kind as DatasetKind,
+			archiveBuffer: uploadedFile.buffer,
+			model,
 		});
 
-		setImmediate(async () => {
-			let zip: JSZip;
-
-			// Step 1: Validate ZIP format exclusively
-			try {
-				zip = await JSZip.loadAsync(buf);
-			} catch {
-				await model.failDatasetJob(id, "Data is not in a valid zip format");
-				return;
-			}
-
-			// Step 2: Process contents (safely catch unexpected parse errors)
-			try {
-				if (datasetKind === "course_offerings") {
-					const fileNames = Object.keys(zip.files);
-					const hasCoursesDir =
-						zip.files["courses/"]?.dir === true || fileNames.some((n) => n.startsWith("courses/") && n !== "courses/");
-
-					if (!hasCoursesDir) {
-						await model.failDatasetJob(id, "Missing root courses directory");
-						return;
-					}
-
-					await model.processCourseOfferingsZip(id, zip);
-					return;
-				}
-
-				await model.processFacilitiesZip(id, zip);
-			} catch (err) {
-				console.error("Dataset processing error:", err);
-				// A fallback for unexpected processing errors so it doesn't falsely blame the zip format
-				await model.failDatasetJob(id, "Processing failed" as any);
-			}
-		});
+		res.status(202).send(accepted);
 	});
 
 	app.get("/api/v2/datasets/:id", async (req, res, next) => {
@@ -896,7 +858,7 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		});
 	});
 
-    app.use(handleErrors);
+	app.use(handleErrors);
 	return app;
 }
 
