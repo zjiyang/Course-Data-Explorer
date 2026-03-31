@@ -911,7 +911,8 @@ type DatasetJob = {
 		| "Missing root courses directory"
 		| "Missing index.htm file"
 		| "index.htm could not be parsed"
-		| "No building table found in index.htm";
+		| "No building table found in index.htm"
+		| "Processing failed";
 };
 
 type Db = {

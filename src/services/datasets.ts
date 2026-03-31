@@ -55,7 +55,7 @@ export async function acceptV2DatasetUpload(input: {
 			await model.processFacilitiesZip(id, zip);
 		} catch (err) {
 			console.error("Dataset processing error:", err);
-			await model.failDatasetJob(id, "Processing failed" as any);
+			await model.failDatasetJob(id, "Processing failed");
 		}
 	});
 
