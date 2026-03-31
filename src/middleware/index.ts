@@ -6,15 +6,6 @@ import {
 	InvalidQueryError,
 } from "../models/errors";
 
-// ============================================================
-// parsePagination
-// Replaces identical copy-pasted blocks in:
-//   GET /api/v1/courses
-//   GET /api/v1/courses/:course/sections
-//   GET /api/v2/buildings
-//   GET /api/v2/buildings/:building/rooms
-// After this middleware runs, res.locals.pagination is set.
-// ============================================================
 export function parsePagination(req: Request, res: Response, next: NextFunction): void {
 	const limitRaw = req.query.limit;
 	const offsetRaw = req.query.offset;
@@ -39,11 +30,6 @@ export function parsePagination(req: Request, res: Response, next: NextFunction)
 	next();
 }
 
-// ============================================================
-// requireJsonBody
-// Guards against null / missing / non-object body before
-// controllers try to access req.body fields.
-// ============================================================
 export function requireJsonBody(req: Request, res: Response, next: NextFunction): void {
 	if (!req.body || typeof req.body !== "object" || req.body === null || Array.isArray(req.body)) {
 		res.status(422).send({
@@ -55,14 +41,6 @@ export function requireJsonBody(req: Request, res: Response, next: NextFunction)
 	next();
 }
 
-// ============================================================
-// handleErrors
-// Centralised error → HTTP mapping.
-// Must be registered LAST with app.use(handleErrors).
-// Before this PR: every handler repeated its own 404/422/413
-// logic inline. Now: services throw typed errors, controllers
-// call next(err), and this middleware maps them once.
-// ============================================================
 export function handleErrors(
 	err: unknown,
 	_req: Request,
@@ -70,19 +48,24 @@ export function handleErrors(
 	_next: NextFunction
 ): void {
 	if (err instanceof ValidationError) {
-		res
-			.status(422)
-			.send({ error: "Validation failed", fields: err.fields, message: err.message });
+		if (err.fields) {
+			res.status(422).send({ error: "Validation failed", fields: err.fields });
+			return;
+		}
+		res.status(422).send({ error: "Validation failed", message: err.message });
 		return;
 	}
+
 	if (err instanceof InvalidQueryError) {
 		res.status(400).send({ error: "Invalid query", message: err.message });
 		return;
 	}
+
 	if (err instanceof NotFoundError) {
 		res.status(404).send({ error: "Not found", message: err.message });
 		return;
 	}
+
 	if (err instanceof TooManyResultsError) {
 		res.status(413).send({
 			error: "Too many results",
@@ -91,6 +74,7 @@ export function handleErrors(
 		});
 		return;
 	}
+
 	console.error("Unhandled error:", err);
 	res.status(500).send({ error: "Internal server error" });
 }

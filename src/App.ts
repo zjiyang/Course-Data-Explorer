@@ -4,7 +4,8 @@ import cors from "cors";
 import multer from "multer";
 import JSZip from "jszip";
 import Decimal from "decimal.js";
-import { handleErrors } from "./middleware";
+import { handleErrors, parsePagination } from "./middleware";
+import { NotFoundError } from "./models/errors";
 
 export type Application = ReturnType<typeof express>;
 
@@ -83,14 +84,19 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		});
 	});
 
-	app.get("/api/v1/datasets/:id", async (req, res) => {
-		const model = new Model(datadir);
-		const job = await model.getDatasetJob(req.params.id);
-		if (!job) {
-			res.status(404).send({ error: "Not found", message: `no dataset with id '${req.params.id}'` });
-			return;
+	app.get("/api/v1/datasets/:id", async (req, res, next) => {
+		try {
+			const model = new Model(datadir);
+			const job = await model.getDatasetJob(req.params.id);
+
+			if (!job) {
+				throw new NotFoundError(`no dataset with id '${req.params.id}'`);
+			}
+
+			res.status(200).send(job);
+		} catch (err) {
+			next(err);
 		}
-		res.status(200).send(job);
 	});
 
 	app.post("/api/v1/search", async (req, res) => {
@@ -501,14 +507,19 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		});
 	});
 
-	app.get("/api/v2/datasets/:id", async (req, res) => {
-		const model = new Model(datadir);
-		const job = await model.getDatasetJob(req.params.id);
-		if (!job) {
-			res.status(404).send({ error: "Not found", message: `no dataset with id '${req.params.id}'` });
-			return;
+	app.get("/api/v2/datasets/:id", async (req, res, next) => {
+		try {
+			const model = new Model(datadir);
+			const job = await model.getDatasetJob(req.params.id);
+
+			if (!job) {
+				throw new NotFoundError(`no dataset with id '${req.params.id}'`);
+			}
+
+			res.status(200).send(job);
+		} catch (err) {
+			next(err);
 		}
-		res.status(200).send(job);
 	});
 
 	// =====================================================================
