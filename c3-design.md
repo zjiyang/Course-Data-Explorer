@@ -1,134 +1,243 @@
 # C3 Design Document
 
-## Declared graded area
+## Declared Graded Area
+
 **Datasets (v2)**
 
-We chose `datasets` as our graded area because this part of the code had the clearest responsibility-mixing problems and gave us a good opportunity to improve structure without changing external behaviour.
+We chose `v2/datasets` as our graded area because this part of the codebase had 
+the clearest responsibility-mixing problems. The original `POST /api/v2/datasets` 
+handler mixed HTTP concerns, validation, job creation, ZIP orchestration, and 
+background processing all in one place. This gave us a focused area to improve 
+structure without changing external behaviour.
 
-Our two PRs both focus on the same graded area:
+Our two PRs both target this area:
+- PR #33 centralizes error handling for dataset lookup endpoints using typed 
+  errors and middleware
+- PR #34 extracts the `POST /api/v2/datasets` upload orchestration from `App.ts` 
+  into `src/services/datasets.ts`
 
-- the first PR centralizes dataset lookup error handling using typed errors and middleware
-- the second PR extracts the `POST /api/v2/datasets` upload orchestration from `App.ts` into `src/services/datasets.ts`
+## Architecture Overview
 
-This keeps the refactor direction consistent within one area instead of mixing in unrelated cleanup.
+After these two PRs, the datasets area is structured as follows:
+```
+Request
+  ↓
+App.ts (route handler)
+  validates request fields (kind, archive)
+  ↓
+src/services/datasets.ts (acceptV2DatasetUpload)
+  owns job creation, ZIP validation, background scheduling, kind-based dispatch
+  ↓
+DatasetModel interface
+  abstracts over the Model class for persistence operations
+  ↓
+Model class (existing)
+  handles file-backed persistence and dataset processing
+```
 
-## Architecture overview
-After these refactors, the `datasets` area is organized more clearly:
+Cross-cutting concerns live in:
+- `src/models/errors.ts` — typed domain error classes with no Express coupling
+- `src/middleware/index.ts` — `handleErrors`, `parsePagination`, `requireJsonBody`
 
-- **`App.ts`**  
-  Handles routes, request-level validation, dependency setup, and HTTP responses
-- **`middleware`**  
-  Handles cross-cutting concerns such as centralized error mapping
-- **`services`**  
-  Handles workflow orchestration that does not need to live directly in route handlers
-- **`models/errors.ts`**  
-  Defines typed domain errors without Express coupling
-- **`Model`**  
-  Still handles file-backed persistence and dataset processing
+This is not a full rewrite. We applied focused refactors in one graded area so 
+that behaviour stays the same while the internal structure becomes cleaner.
 
-This is not a full rewrite of the whole system. Instead, we used small, focused refactors in one graded area so that behaviour stays the same while the internal structure becomes easier to understand and maintain.
+## Four Required Design Decisions
 
-## Design decisions
+### 1. How will services access repositories?
 
-### 1. Centralize dataset lookup error handling in middleware
-Originally, `GET /api/v1/datasets/:id` and `GET /api/v2/datasets/:id` both built their own `404` responses inline in the route handler. We changed this so that the routes throw `NotFoundError`, and `handleErrors` maps that error to a `404` response in one place.
+**Choice: Dependency injection via interface**
 
-This improves separation of concerns because route handlers no longer own repeated response-shape construction for dataset-not-found cases. It also reduces duplication and makes the external `404` shape easier to keep consistent.
+The service (`acceptV2DatasetUpload`) does not import `Model` directly. Instead, 
+it accepts a `DatasetModel` interface that declares only the methods it needs:
+```ts
+type DatasetModel = {
+  createDatasetJob(id: string, kind: DatasetKind): Promise<void>;
+  failDatasetJob(id: string, message: string): Promise<void>;
+  processCourseOfferingsZip(id: string, zip: JSZip): Promise<void>;
+  processFacilitiesZip(id: string, zip: JSZip): Promise<void>;
+};
+```
 
-### 2. Keep typed domain errors independent from Express
-We defined `NotFoundError`, `ValidationError`, `TooManyResultsError`, and `InvalidQueryError` in `src/models/errors.ts` without importing Express.
+`App.ts` creates a `Model` instance and passes it in. The service works against 
+the interface, not the concrete class.
 
-This keeps inner-layer logic independent from HTTP framework details. A service or lower-level module can throw a domain error without needing to know how that error will be converted into an HTTP status code. That responsibility stays in middleware, which keeps dependency direction cleaner.
+**Why:** The service can be tested by passing any object that satisfies the 
+interface, without instantiating the full `Model` or touching the file system.
 
-### 3. Extract `POST /api/v2/datasets` upload orchestration into a service
-This was the main change in my PR.
+**Tradeoff:** `App.ts` still instantiates `new Model(datadir)` on every request 
+rather than once at startup. A composition root approach would be cleaner, but 
+was deferred to keep the PR scope narrow.
 
-Before the refactor, `POST /api/v2/datasets` was doing all of the following in one route handler:
+---
 
-- request validation
-- dataset job creation
-- accepted response construction
-- ZIP validation
-- background scheduling
-- kind-based dispatch
+### 2. How will you structure validation?
 
-I moved that upload-processing orchestration into `src/services/datasets.ts` through `acceptV2DatasetUpload(...)`.
+**Choice: Per-route schema modules (validation inside the route handler)**
 
-Now the route mainly handles:
+Request field validation for each endpoint lives inside its own route handler in 
+`App.ts`. For example, `POST /api/v2/datasets` validates `kind` and `archive` 
+inline before calling the service. Structural validation (body must be an object) 
+is handled by `requireJsonBody` middleware in `src/middleware/index.ts`.
 
-- request-level validation
-- creating `Model`
-- calling the service
-- sending the `202` response
+**Why:** The dataset upload endpoint uses `multipart/form-data` via multer, which 
+makes the body shape different from regular JSON endpoints. The specific 
+validation rules for `kind` and `archive` are intrinsic to this one endpoint and 
+not shared elsewhere, so co-location is simpler and correct.
 
-This makes the route thinner and gives the upload workflow a clearer place to live.
+**Tradeoff:** If a second upload endpoint were added with the same field 
+requirements, the validation logic would need to be extracted into a shared 
+helper. For the current scope, co-location avoids premature abstraction.
 
-### 4. Depend on a smaller interface in the service layer
-Inside `src/services/datasets.ts`, the service does not depend directly on the full concrete `Model` type. Instead, it uses a `DatasetModel` interface that only includes the methods needed by the upload workflow.
+---
 
-This keeps the service dependency smaller and makes the service easier to test in isolation. Even though `App.ts` still passes a real `Model` instance, the service itself is now written against a narrower interface.
+### 3. How will you represent domain errors?
 
-## Request flow
+**Choice: Custom Error subclasses**
+
+We defined typed error classes in `src/models/errors.ts` with no Express 
+coupling:
+```ts
+export class NotFoundError extends Error { ... }
+export class ValidationError extends Error {
+  public readonly fields?: Record<string, string>;
+}
+export class TooManyResultsError extends Error {
+  public readonly limit: number;
+}
+export class InvalidQueryError extends Error { ... }
+```
+
+Services and handlers throw typed errors. The centralised `handleErrors` 
+middleware in `src/middleware/index.ts` maps them to HTTP responses using 
+`instanceof`:
+```ts
+if (err instanceof NotFoundError)
+  res.status(404).send({ error: "Not found", message: err.message });
+```
+
+**Why:** Services remain Express-free — they throw without knowing about status 
+codes. TypeScript's `instanceof` gives compile-time safety. All error-to-HTTP 
+mapping is centralised in one place so changing a response shape requires editing 
+one file.
+
+**Tradeoff:** Every handler must remember to use `try/catch` and call `next(err)` 
+to route errors through `handleErrors`. A result-style `Ok`/`Err` approach would 
+make the error path explicit in type signatures, but requires more boilerplate at 
+every call site.
+
+---
+
+### 4. How will you organize your modules?
+
+**Choice: Hybrid feature-first**
+```
+src/
+  middleware/
+    index.ts          ← shared cross-cutting concerns
+  models/
+    errors.ts         ← shared domain error types
+  services/
+    datasets.ts       ← datasets feature owns its service
+  App.ts              ← routes and HTTP entry points
+```
+
+The datasets feature owns its service file. Genuinely shared infrastructure 
+(errors, middleware) lives in a small shared core. The existing `Model` class 
+remains as the persistence layer for now.
+
+**Why:** A developer working on dataset ingestion can find all relevant service 
+code in `src/services/datasets.ts` without navigating a flat all-services-together 
+layout. Adding a new dataset kind means adding logic to one service file.
+
+**Tradeoff:** The vertical slice is not fully complete — there is no separate 
+controller or repository file yet. The route handler in `App.ts` still handles 
+both HTTP concerns and dependency setup. This is documented as remaining technical 
+debt.
+
+---
+
+## Request Flow
 
 ### Before
-Before the refactor, `POST /api/v2/datasets` handled almost the full upload flow inside `App.ts`:
+`POST /api/v2/datasets` handled the full upload flow inline in `App.ts`:
 
 1. validate `kind` and `archive`
 2. create dataset job
 3. build accepted response
-4. schedule background processing with `setImmediate(...)`
+4. schedule background processing with `setImmediate`
 5. validate ZIP format
 6. dispatch based on dataset kind
 7. handle failure paths
 
-This meant a single route handler was responsible for both HTTP logic and upload workflow orchestration.
-
 ### After
-After the refactor, the flow looks like this:
+1. request enters `POST /api/v2/datasets` in `App.ts`
+2. route validates `kind` and `archive`
+3. route creates `Model` and calls `acceptV2DatasetUpload(...)`
+4. service creates the dataset job
+5. service schedules background processing via `setImmediate`
+6. service validates ZIP format and dispatches by kind
+7. route sends `202 Accepted`
 
-1. request enters `POST /api/v2/datasets`
-2. the route performs request-level validation
-3. the route creates `Model`
-4. the route calls `acceptV2DatasetUpload(...)`
-5. the service creates the dataset job
-6. the service schedules background processing
-7. the service validates ZIP format and dispatches by dataset kind
-8. the route returns `202 Accepted`
+For dataset lookup (`GET /api/v2/datasets/:id`):
+1. handler calls `model.getDatasetJob(id)`
+2. if not found, throws `NotFoundError`
+3. `handleErrors` middleware maps it to `404`
 
-Also, dataset lookup errors are now mapped through middleware instead of being built inline by each route.
+---
 
-## Before vs After example
-The refactor I want to highlight most is the extraction of the `POST /api/v2/datasets` upload workflow out of `App.ts`.
+## Before vs After Example
 
-### Before
-Before this refactor, the `POST /api/v2/datasets` route directly handled multiple responsibilities in one place. After validating the request, it generated the dataset job ID, created the dataset job, constructed the `202 Accepted` response payload, scheduled background processing with `setImmediate(...)`, validated the uploaded ZIP, and dispatched processing based on dataset kind.
+The refactor I want to highlight is the extraction of `POST /api/v2/datasets` 
+upload orchestration from `App.ts`.
 
-This meant the route mixed HTTP concerns with upload workflow orchestration, which made it longer and harder to reason about.
+**Before** — the route handler owned the full workflow (~70 lines):
+```ts
+// all of this was inline in the route handler
+const id = `upload_${Date.now()}_${Math.floor(Math.random() * 1_000_000)}`;
+await model.createDatasetJob(id, datasetKind);
+res.status(202).send({ id, status: "processing", kind: datasetKind, message: "..." });
+setImmediate(async () => {
+  // ZIP validation, kind dispatch, failure handling
+});
+```
 
-### After
-After this refactor, the route still performs request-level validation and still returns the same `202 Accepted` response, but it now delegates the upload-processing orchestration to `acceptV2DatasetUpload(...)` in `src/services/datasets.ts`.
+**After** — the route delegates to the service (~5 lines):
+```ts
+const accepted = await acceptV2DatasetUpload({
+  kind: kind as DatasetKind,
+  archiveBuffer: uploadedFile.buffer,
+  model,
+});
+res.status(202).send(accepted);
+```
 
-This creates a clearer split of responsibilities:
+The route now focuses on request validation and response sending. The service 
+owns the upload workflow. This makes the route meaningfully thinner and gives 
+the orchestration logic a clearer home.
 
-- `App.ts` handles the HTTP entry point, validation, dependency setup, and response sending
-- `src/services/datasets.ts` handles job creation, accepted-response data construction, ZIP validation, background scheduling, and kind-based dispatch
+> **PR #33 commit:** https://github.students.cs.ubc.ca/CPSC310-2025W-T2/project_team083/commit/2addbd3
+> **PR #34 commit:** https://github.students.cs.ubc.ca/CPSC310-2025W-T2/project_team083/commit/bc21794
 
-I am proud of this refactor because it makes the route meaningfully thinner without changing the external behaviour of the endpoint.
+---
 
-### Specific commit link
-- [PR #34 service extraction commit](https://github.students.cs.ubc.ca/CPSC310-2025W-T2/project_team083/commit/bc217944ef9b307dc7e79dfd3dba61ca8b1d2f8d)
+## Remaining Technical Debt
 
-## Remaining technical debt
-There is still some technical debt left in this graded area.
+1. **No controller layer** — the route handler in `App.ts` still handles both 
+   HTTP concerns and dependency setup. A dedicated controller file would complete 
+   the vertical slice.
 
-1. **`Model` lifecycle**  
-   `App.ts` still creates `new Model(datadir)` inside handlers. That is fine for the current scope, but a cleaner composition-root style setup could be a future improvement.
+2. **No repository layer** — `Model` still handles file-backed persistence 
+   directly. Introducing a `JobRepository` would satisfy Constraint 4 fully and 
+   make the persistence layer independently testable.
 
-2. **Validation is still mostly inline**  
-   A lot of request validation still lives inside route handlers. A later refactor could move more of this into dedicated validation helpers or middleware.
+3. **Model instantiated per request** — `new Model(datadir)` is created inside 
+   the handler on every request. A composition root at startup would be cleaner.
 
-3. **The datasets area is not fully migrated yet**  
-   Error handling and upload orchestration are cleaner now, but the whole area is not fully refactored yet.
+4. **Validation still inline** — field validation for most endpoints still lives 
+   inside route handlers. A later refactor could move this into dedicated 
+   validation middleware or per-resource schema modules.
 
-4. **`Model` is still large**  
-   The service boundary is clearer than before, but processing and persistence are still concentrated in a large `Model` class. More separation could be done later if needed.
+5. **Most handlers not yet migrated** — only the dataset lookup endpoints use 
+   `next(err)` with `handleErrors`. V1 courses, sections, and search still use 
+   inline error responses.
