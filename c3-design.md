@@ -10,15 +10,16 @@ handler mixed HTTP concerns, validation, job creation, ZIP orchestration, and
 background processing all in one place. This gave us a focused area to improve 
 structure without changing external behaviour.
 
-Our two PRs both target this area:
+Our PRs all target this area:
 - PR #33 centralizes error handling for dataset lookup endpoints using typed 
   errors and middleware
 - PR #34 extracts the `POST /api/v2/datasets` upload orchestration from `App.ts` 
   into `src/services/datasets.ts`
+- PR #37 introduces `JobRepository` to isolate dataset job reads from the handler
 
 ## Architecture Overview
 
-After these two PRs, the datasets area is structured as follows:
+After these refactors, the datasets area is structured as follows:
 ```
 Request
   ↓
@@ -31,8 +32,11 @@ src/services/datasets.ts (acceptV2DatasetUpload)
 DatasetModel interface
   abstracts over the Model class for persistence operations
   ↓
+src/repositories/jobRepository.ts (JobRepository)
+  reads dataset job records from disk for GET /api/v2/datasets/:id
+  ↓
 Model class (existing)
-  handles file-backed persistence and dataset processing
+  handles file-backed persistence for upload processing
 ```
 
 Cross-cutting concerns live in:
@@ -60,14 +64,16 @@ type DatasetModel = {
 ```
 
 `App.ts` creates a `Model` instance and passes it in. The service works against 
-the interface, not the concrete class.
+the interface, not the concrete class. PR #37 takes this further by introducing 
+`JobRepository` so that `GET /api/v2/datasets/:id` no longer depends on `Model` 
+at all for job lookups — it calls `jobRepo.getById` directly.
 
 **Why:** The service can be tested by passing any object that satisfies the 
 interface, without instantiating the full `Model` or touching the file system.
 
 **Tradeoff:** `App.ts` still instantiates `new Model(datadir)` on every request 
 rather than once at startup. A composition root approach would be cleaner, but 
-was deferred to keep the PR scope narrow.
+was deferred to keep each PR scope narrow.
 
 ---
 
@@ -134,26 +140,27 @@ every call site.
 ```
 src/
   middleware/
-    index.ts          ← shared cross-cutting concerns
+    index.ts              ← shared cross-cutting concerns
   models/
-    errors.ts         ← shared domain error types
+    errors.ts             ← shared domain error types
+  repositories/
+    jobRepository.ts      ← dataset job persistence
   services/
-    datasets.ts       ← datasets feature owns its service
-  App.ts              ← routes and HTTP entry points
+    datasets.ts           ← datasets feature owns its service
+  App.ts                  ← routes and HTTP entry points
 ```
 
-The datasets feature owns its service file. Genuinely shared infrastructure 
-(errors, middleware) lives in a small shared core. The existing `Model` class 
-remains as the persistence layer for now.
+The datasets feature owns its service and repository files. Genuinely shared 
+infrastructure (errors, middleware) lives in a small shared core. The existing 
+`Model` class remains as the persistence layer for upload processing for now.
 
-**Why:** A developer working on dataset ingestion can find all relevant service 
-code in `src/services/datasets.ts` without navigating a flat all-services-together 
-layout. Adding a new dataset kind means adding logic to one service file.
+**Why:** A developer working on dataset ingestion can find all relevant code 
+without navigating a flat layout. Adding a new dataset kind means adding logic 
+to one service file.
 
 **Tradeoff:** The vertical slice is not fully complete — there is no separate 
-controller or repository file yet. The route handler in `App.ts` still handles 
-both HTTP concerns and dependency setup. This is documented as remaining technical 
-debt.
+controller file yet. The route handler in `App.ts` still handles both HTTP 
+concerns and dependency setup. This is documented as remaining technical debt.
 
 ---
 
@@ -180,7 +187,8 @@ debt.
 7. route sends `202 Accepted`
 
 For dataset lookup (`GET /api/v2/datasets/:id`):
-1. handler calls `model.getDatasetJob(id)`
+
+1. handler calls `jobRepo.getById(id)`
 2. if not found, throws `NotFoundError`
 3. `handleErrors` middleware maps it to `404`
 
@@ -227,9 +235,10 @@ the orchestration logic a clearer home.
    HTTP concerns and dependency setup. A dedicated controller file would complete 
    the vertical slice.
 
-2. **No repository layer** — `Model` still handles file-backed persistence 
-   directly. Introducing a `JobRepository` would satisfy Constraint 4 fully and 
-   make the persistence layer independently testable.
+2. **Repository layer partially introduced** — `JobRepository` now handles 
+   dataset job reads for `GET /api/v2/datasets/:id`. Write operations (create, 
+   fail, complete) are still on `Model` via the upload service and could be 
+   moved into the repository in a follow-up.
 
 3. **Model instantiated per request** — `new Model(datadir)` is created inside 
    the handler on every request. A composition root at startup would be cleaner.

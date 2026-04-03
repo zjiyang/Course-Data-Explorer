@@ -7,6 +7,7 @@ import Decimal from "decimal.js";
 import { handleErrors, parsePagination } from "./middleware";
 import { NotFoundError } from "./models/errors";
 import { acceptV2DatasetUpload } from "./services/datasets";
+import { JobRepository } from "./repositories/jobRepository";
 
 export type Application = ReturnType<typeof express>;
 
@@ -471,8 +472,8 @@ export async function createApp(config: AppConfig): Promise<Application> {
 
 	app.get("/api/v2/datasets/:id", async (req, res, next) => {
 		try {
-			const model = new Model(datadir);
-			const job = await model.getDatasetJob(req.params.id);
+			const jobRepo = new JobRepository(datadir);
+			const job = await jobRepo.getById(req.params.id);
 
 			if (!job) {
 				throw new NotFoundError(`no dataset with id '${req.params.id}'`);
