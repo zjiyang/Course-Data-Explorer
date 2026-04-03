@@ -187,6 +187,7 @@ concerns and dependency setup. This is documented as remaining technical debt.
 7. route sends `202 Accepted`
 
 For dataset lookup (`GET /api/v2/datasets/:id`):
+
 1. handler calls `jobRepo.getById(id)`
 2. if not found, throws `NotFoundError`
 3. `handleErrors` middleware maps it to `404`
