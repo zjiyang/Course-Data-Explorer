@@ -6,8 +6,7 @@ import JSZip from "jszip";
 import Decimal from "decimal.js";
 import { handleErrors, parsePagination } from "./middleware";
 import { NotFoundError } from "./models/errors";
-import { acceptV2DatasetUpload } from "./services/datasets";
-import { JobRepository } from "./repositories/jobRepository";
+import { makeDatasetsController } from "./controllers/datasetsController";
 
 export type Application = ReturnType<typeof express>;
 
@@ -22,6 +21,14 @@ export async function createApp(config: AppConfig): Promise<Application> {
 	await fs.mkdir(datadir, { recursive: true });
 
 	const upload = multer({ storage: multer.memoryStorage() });
+
+	// =====================================================================
+	// Dependency setup — wire controller with its dependencies once at startup
+	// =====================================================================
+	const datasetsController = makeDatasetsController({
+		datadir,
+		model: new Model(datadir),
+	});
 
 	app.use(express.static("frontend/public"));
 	app.use(express.json());
@@ -458,32 +465,10 @@ export async function createApp(config: AppConfig): Promise<Application> {
 			return;
 		}
 
-		const uploadedFile = req.file!;
-		const model = new Model(datadir);
-
-		const accepted = await acceptV2DatasetUpload({
-			kind: kind as DatasetKind,
-			archiveBuffer: uploadedFile.buffer,
-			model,
-		});
-
-		res.status(202).send(accepted);
+		await datasetsController.uploadV2Dataset(req, res);
 	});
 
-	app.get("/api/v2/datasets/:id", async (req, res, next) => {
-		try {
-			const jobRepo = new JobRepository(datadir);
-			const job = await jobRepo.getById(req.params.id);
-
-			if (!job) {
-				throw new NotFoundError(`no dataset with id '${req.params.id}'`);
-			}
-
-			res.status(200).send(job);
-		} catch (err) {
-			next(err);
-		}
-	});
+	app.get("/api/v2/datasets/:id", datasetsController.getV2Dataset);
 
 	// =====================================================================
 	// V2 search
