@@ -15,11 +15,11 @@ Our PRs all target this area:
   errors and middleware
 - PR #34 extracts the `POST /api/v2/datasets` upload orchestration from `App.ts`
   into `src/services/datasets.ts`
-- PR #37 introduces `JobRepository` to isolate dataset job reads from the handler
+- PR #37 introduces `JobRepository` to isolate dataset job reads from the lookup path
 
-Beyond the graded PRs, we also introduced a controller layer and wired
-`parsePagination` into all list routes so the architectural patterns are applied
-consistently across the codebase.
+Beyond the graded PRs, we also introduced a controller layer for the datasets
+slice. `parsePagination` was introduced as reusable middleware, but it has not
+yet been applied to all list routes.
 
 ## Architecture Overview
 
@@ -188,9 +188,10 @@ core. The existing `Model` class remains as the persistence layer for upload
 processing and all V1/V2 CRUD operations for now.
 
 **Why:** A developer working on dataset ingestion can find all relevant code
-without navigating a flat layout. The full vertical slice for the graded area now
-runs from route → controller → service → repository with clear separation at
-each layer.
+without navigating a flat layout. The datasets area now has a clearer layered structure. The lookup path goes
+through route → controller → repository, while the upload path goes through
+route → controller → service and still relies on the existing `Model`
+abstraction for persistence operations.
 
 **Tradeoff:** The vertical slice is complete for the datasets graded area, but
 other resources (courses, sections, buildings, rooms, search) have not yet been
@@ -239,7 +240,7 @@ For list endpoints (`GET /api/v1/courses`, `GET /api/v2/buildings`, etc.):
 
 ## Before vs After Example
 
-### Service extraction + controller layer (PR #34)
+### Service extraction for dataset upload (PR #34)
 
 **Before** — the route handler owned the full workflow (~70 lines):
 ```ts
@@ -265,7 +266,6 @@ res.status(202).send(accepted);
 The controller now focuses on reading `req` and writing `res`. The service owns
 the upload workflow. This makes both layers easier to read and test independently.
 
-> **PR #33 commit:** https://github.students.cs.ubc.ca/CPSC310-2025W-T2/project_team083/commit/2addbd3
 > **PR #34 commit:** https://github.students.cs.ubc.ca/CPSC310-2025W-T2/project_team083/commit/bc21794
 
 ---
