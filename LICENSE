@@ -1,10 +1,28 @@
-# License
+MIT License
 
-Solutions to the UBC CPSC 310 course project are considered private and should not be shared on public repositories.
+Copyright (c) 2026 Jiyang Zhang
 
-While the readings for this course are licensed using [CC-by-SA](https://creativecommons.org/licenses/by-sa/3.0/),
-**checkpoint descriptions and implementations are considered private materials**.
-We go to considerable lengths to make the project an interesting and useful learning experience for this course.
-This is a great deal of work, and while future students may be tempted by your solutions, posting them does not
-do them any real favours. Please be considerate with these private materials and not pass them along to others,
-do not make your repos public or post them to other sites online.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+Note: this project began as a team submission for CPSC 310 (UBC Software
+Engineering, 2025W T2), co-authored with Joanna Feng. It is shared here as a
+personal portfolio project after the course concluded; the original course
+checkpoint specifications and grading materials are not included.

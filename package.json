@@ -1,11 +1,9 @@
 {
-	"name": "course-insight",
-	"description": "CPSC 310 Course Project",
-	"homepage": "https://github.com/ubccpsc/310/blob/main/README.md#project-license",
-	"author": "Reid Holmes",
+	"name": "course-data-explorer",
+	"description": "Course Data Explorer — a full-stack course/facilities data explorer originally built for CPSC 310 (UBC Software Engineering)",
+	"author": "Jiyang Zhang",
 	"contributors": [
-		"Nick Bradley",
-		"Katharine Kerr"
+		"Joanna Feng"
 	],
 	"private": true,
 	"version": "1.0.0",

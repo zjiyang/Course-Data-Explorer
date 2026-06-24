@@ -1,0 +1,197 @@
+<!doctype html>
+<html>
+	<head>
+		<meta http-equiv="Content-type" content="text/html; charset=utf-8" />
+		<title>310 Frontend</title>
+		<link href="/style.css" rel="stylesheet" />
+	</head>
+
+	<body>
+		<header class="header">
+			<h1>InsightUBC Course Explorer</h1>
+			<p class="muted">Upload a dataset, then explore offerings with filters & sorting (server-side).</p>
+		</header>
+
+		<section class="card">
+			<h2>Dataset Upload</h2>
+
+			<div class="row">
+				<input id="dataset-file" type="file" accept=".zip" />
+				<button id="upload-btn" class="button">Upload</button>
+				<button
+					id="clear-data-btn"
+					class="button secondary"
+					title="Delete all uploaded courses & sections"
+				>
+					Clear Data
+				</button>
+			</div>
+
+			<div class="row status">
+				<div id="upload-spinner" class="spinner hidden" aria-label="processing"></div>
+				<div id="upload-status" class="muted">No upload yet.</div>
+			</div>
+
+			<div id="upload-result" class="result"></div>
+			<div id="upload-error" class="error"></div>
+		</section>
+
+		<section class="card">
+			<h2>Filters</h2>
+
+			<div class="grid">
+				<div class="field">
+					<label for="dept-select">Departments (multi-select)</label>
+					<select id="dept-select" multiple size="6"></select>
+					<div class="hint">Tip: Ctrl/Cmd-click to select multiple.</div>
+				</div>
+
+				<div class="field">
+					<label>Year range</label>
+					<div class="row">
+						<input id="year-min" type="number" placeholder="Min (e.g., 2015)" />
+						<input id="year-max" type="number" placeholder="Max (e.g., 2020)" />
+					</div>
+					<div class="hint">Leave blank for no bound.</div>
+				</div>
+
+				<div class="field">
+					<label for="instructor-input">Instructor (partial match)</label>
+					<input id="instructor-input" type="text" placeholder="e.g., holmes" />
+					<div class="hint">Uses IS with *pattern*.</div>
+				</div>
+
+				<div class="field">
+					<label>Actions</label>
+					<div class="row">
+						<button id="apply-btn" class="button">Apply Filters</button>
+						<button id="reset-btn" class="button secondary">Reset</button>
+					</div>
+				</div>
+			</div>
+
+			<div id="query-error" class="error"></div>
+		</section>
+
+		<section class="card">
+			<div class="row space-between">
+				<h2>Offerings</h2>
+				<div class="muted" id="table-meta"></div>
+			</div>
+
+			<div class="table-wrap">
+				<table id="results-table">
+					<thead>
+						<tr>
+							<th data-sort="dept">dept</th>
+							<th data-sort="code">code</th>
+							<th data-sort="title">title</th>
+							<th data-sort="year">year</th>
+							<th data-sort="instructor">instructor</th>
+							<th data-sort="avg">avg</th>
+						</tr>
+					</thead>
+					<tbody id="results-body"></tbody>
+				</table>
+			</div>
+
+			<div class="muted small">Click a column header to sort (server-side). Click again to toggle ▲/▼.</div>
+		</section>
+
+		<!-- ── Data Insights ── -->
+		<section class="card">
+			<h2>Data Insights</h2>
+			<p class="muted" style="margin-bottom:14px">Visual analysis of the uploaded dataset. Charts load automatically — no filters needed.</p>
+
+			<!-- Tab buttons -->
+			<div class="row" style="gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:12px">
+				<button class="insight-tab active" data-insight="1">📊 Dept Averages</button>
+				<button class="insight-tab" data-insight="2">📈 Grade Trends</button>
+				<button class="insight-tab" data-insight="3">⚠ Pass vs Fail</button>
+			</div>
+
+			<!-- Panel 1: Dept Averages -->
+			<div class="insight-panel" id="insight-panel-1">
+				<div class="row space-between" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
+					<div>
+						<strong>Department Average Grades</strong>
+						<div class="hint">Which departments consistently outperform or underperform across all years?</div>
+					</div>
+					<div class="row" style="gap:8px;flex-wrap:wrap">
+						<label class="muted" style="font-size:13px">Sort:</label>
+						<select id="i1-sort" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+							<option value="avg">By average ↓</option>
+							<option value="dept">Dept A–Z</option>
+						</select>
+						<label class="muted" style="font-size:13px">Show:</label>
+						<select id="i1-limit" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+							<option value="20">Top 20</option>
+							<option value="40">Top 40</option>
+							<option value="all">All</option>
+						</select>
+					</div>
+				</div>
+				<div class="insight-use-case">💡 <strong>Decision value:</strong> Department heads can identify disciplines with persistently high or low grade averages — flagging candidates for curriculum review or student support allocation.</div>
+				<div style="position:relative;height:420px;margin-top:14px">
+					<canvas id="chart-i1"></canvas>
+				</div>
+				<div class="hint" style="margin-top:8px">Hover any bar for exact average. Computed across all sections and years in the dataset.</div>
+			</div>
+
+			<!-- Panel 2: Grade Trends -->
+			<div class="insight-panel" id="insight-panel-2" style="display:none">
+				<div class="row space-between" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
+					<div>
+						<strong>Grade Trends Over Time</strong>
+						<div class="hint">How has average performance shifted year-by-year within a department?</div>
+					</div>
+					<div class="row" style="gap:8px;flex-wrap:wrap">
+						<label class="muted" style="font-size:13px">Department:</label>
+						<select id="i2-dept" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;min-width:120px"></select>
+						<label class="muted" style="font-size:13px">Year from:</label>
+						<input id="i2-year-min" type="number" placeholder="e.g. 2010" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;width:90px" />
+						<label class="muted" style="font-size:13px">to:</label>
+						<input id="i2-year-max" type="number" placeholder="e.g. 2022" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;width:90px" />
+					</div>
+				</div>
+				<div class="insight-use-case">💡 <strong>Decision value:</strong> Enrollment planners can detect long-term grade inflation, deflation, or sudden policy-driven shifts — enabling proactive course planning and resource forecasting.</div>
+				<div style="position:relative;height:380px;margin-top:14px">
+					<canvas id="chart-i2"></canvas>
+				</div>
+				<div class="hint" style="margin-top:8px">Select a department and optional year range. Line shows the yearly average grade across all its sections.</div>
+			</div>
+
+			<!-- Panel 3: Pass vs Fail -->
+			<div class="insight-panel" id="insight-panel-3" style="display:none">
+				<div class="row space-between" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
+					<div>
+						<strong>Grade Average vs Failure Rate</strong>
+						<div class="hint">Which courses have high failure rates despite decent averages — or struggle across the board?</div>
+					</div>
+					<div class="row" style="gap:8px;flex-wrap:wrap">
+						<label class="muted" style="font-size:13px">Dept:</label>
+						<select id="i3-dept" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;min-width:120px">
+							<option value="all">All departments</option>
+						</select>
+						<label class="muted" style="font-size:13px">Min enrolled:</label>
+						<select id="i3-min" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+							<option value="10">≥ 10</option>
+							<option value="30" selected>≥ 30</option>
+							<option value="100">≥ 100</option>
+						</select>
+					</div>
+				</div>
+				<div class="insight-use-case">💡 <strong>Decision value:</strong> Student advisors can pinpoint courses with unusually high failure rates, enabling targeted early-intervention programs and academic support prioritization.</div>
+				<div style="position:relative;height:380px;margin-top:14px">
+					<canvas id="chart-i3"></canvas>
+				</div>
+				<div class="hint" style="margin-top:8px">Each dot = one course. X = avg grade, Y = fail rate (%). Hover a dot for dept / code / details.</div>
+			</div>
+
+			<div id="insight-error" class="error"></div>
+		</section>
+
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+		<script type="text/javascript" src="/frontend.js"></script>
+	</body>
+</html>

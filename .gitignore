@@ -23,3 +23,13 @@ data/
 .DS_Store
 .env
 *.log
+
+# Frontend build artifacts (frontend uses yarn; ignore stray npm lockfile)
+package-lock.json
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+frontend/vite.config.js.timestamp-*.mjs
+
+# Local-only scratch (not part of the project)
+CP HTML File/

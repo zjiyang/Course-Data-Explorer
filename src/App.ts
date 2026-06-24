@@ -30,7 +30,8 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		model: new Model(datadir),
 	});
 
-	app.use(express.static("frontend/public"));
+	// Serves the built React frontend (frontend/dist, produced by `yarn --cwd frontend build`).
+	app.use(express.static("frontend/dist"));
 	app.use(express.json());
 	app.use(express.raw({ type: "application/*", limit: "10mb" }));
 	app.use(cors());
@@ -154,21 +155,8 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		res.status(200).send(results);
 	});
 
-	app.get("/api/v1/courses", async (req, res) => {
-		const limitRaw = req.query.limit;
-		const offsetRaw = req.query.offset;
-
-		const limit = limitRaw === undefined ? 100 : Number(limitRaw);
-		const offset = offsetRaw === undefined ? 0 : Number(offsetRaw);
-
-		const params: Record<string, string> = {};
-		if (!Number.isInteger(limit) || limit < 1 || limit > 5000) params.limit = "expected an integer between 1 and 5000";
-		if (!Number.isInteger(offset) || offset < 0) params.offset = "expected an integer >= 0";
-
-		if (Object.keys(params).length > 0) {
-			res.status(400).send({ error: "Invalid request parameters", params });
-			return;
-		}
+	app.get("/api/v1/courses", parsePagination, async (req, res) => {
+		const { limit, offset } = res.locals.pagination;
 
 		const model = new Model(datadir);
 		const all = await model.listCoursesSorted();
@@ -269,21 +257,8 @@ export async function createApp(config: AppConfig): Promise<Application> {
 		});
 	});
 
-	app.get("/api/v1/courses/:course/sections", async (req, res) => {
-		const limitRaw = req.query.limit;
-		const offsetRaw = req.query.offset;
-
-		const limit = limitRaw === undefined ? 100 : Number(limitRaw);
-		const offset = offsetRaw === undefined ? 0 : Number(offsetRaw);
-
-		const params: Record<string, string> = {};
-		if (!Number.isInteger(limit) || limit < 1 || limit > 5000) params.limit = "expected an integer between 1 and 5000";
-		if (!Number.isInteger(offset) || offset < 0) params.offset = "expected an integer >= 0";
-
-		if (Object.keys(params).length > 0) {
-			res.status(400).send({ error: "Invalid request parameters", params });
-			return;
-		}
+	app.get("/api/v1/courses/:course/sections", parsePagination, async (req, res) => {
+		const { limit, offset } = res.locals.pagination;
 
 		const model = new Model(datadir);
 		const list = await model.listSectionsSorted(req.params.course);
@@ -528,21 +503,8 @@ export async function createApp(config: AppConfig): Promise<Application> {
 	// V2 buildings
 	// =====================================================================
 
-	app.get("/api/v2/buildings", async (req, res) => {
-		const limitRaw = req.query.limit;
-		const offsetRaw = req.query.offset;
-
-		const limit = limitRaw === undefined ? 100 : Number(limitRaw);
-		const offset = offsetRaw === undefined ? 0 : Number(offsetRaw);
-
-		const params: Record<string, string> = {};
-		if (!Number.isInteger(limit) || limit < 1 || limit > 5000) params.limit = "expected an integer between 1 and 5000";
-		if (!Number.isInteger(offset) || offset < 0) params.offset = "expected an integer >= 0";
-
-		if (Object.keys(params).length > 0) {
-			res.status(400).send({ error: "Invalid request parameters", params });
-			return;
-		}
+	app.get("/api/v2/buildings", parsePagination, async (req, res) => {
+		const { limit, offset } = res.locals.pagination;
 
 		const model = new Model(datadir);
 		const all = await model.listBuildingsSorted();
@@ -669,21 +631,8 @@ export async function createApp(config: AppConfig): Promise<Application> {
 	// V2 rooms
 	// =====================================================================
 
-	app.get("/api/v2/buildings/:building/rooms", async (req, res) => {
-		const limitRaw = req.query.limit;
-		const offsetRaw = req.query.offset;
-
-		const limit = limitRaw === undefined ? 100 : Number(limitRaw);
-		const offset = offsetRaw === undefined ? 0 : Number(offsetRaw);
-
-		const params: Record<string, string> = {};
-		if (!Number.isInteger(limit) || limit < 1 || limit > 5000) params.limit = "expected an integer between 1 and 5000";
-		if (!Number.isInteger(offset) || offset < 0) params.offset = "expected an integer >= 0";
-
-		if (Object.keys(params).length > 0) {
-			res.status(400).send({ error: "Invalid request parameters", params });
-			return;
-		}
+	app.get("/api/v2/buildings/:building/rooms", parsePagination, async (req, res) => {
+		const { limit, offset } = res.locals.pagination;
 
 		const model = new Model(datadir);
 		const list = await model.listRoomsSorted(req.params.building);

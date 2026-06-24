@@ -1,96 +1,86 @@
-# CPSC 310 Project Repository
+# Course Data Explorer
 
-This repository contains starter code for the class project.
-Please keep your repository private.
+A full-stack data explorer for UBC course and campus-facilities data: upload zipped datasets, query them through a small REST API with a custom filter/aggregation DSL, and browse the results in a React frontend with three data-insight charts.
 
-For information about the project, autotest, and the checkpoints, see the course webpage.
+This started as a team project for CPSC 310 (UBC Software Engineering, 2025W T2), built with Joanna Feng. After the course ended, I rewrote the frontend in React + TypeScript and did some backend cleanup as a personal portfolio exercise — see [Origin & changes since the course](#origin--changes-since-the-course) below.
 
-## Configuring your environment
+## What it does
 
-To start using this project, you need to get your development environment configured so that you can build and execute the code.
-To do this, follow these steps; the specifics of each step will vary based on your operating system:
+- **Upload** a zip of UBC course-section data (`POST /api/v1/datasets`) or campus-facilities/room data (`POST /api/v2/datasets`). Parsing happens as a background job; poll `GET /api/v1/jobs/:id` for status.
+- **Query** the parsed data with a JSON body language supporting `AND`/`OR`/`NOT`, comparisons (`GT`/`LT`/`EQ`/`IS`), column projection, sorting, and grouped aggregation (`COUNT`/`SUM`/`AVG`/`MIN`/`MAX`) — `POST /api/v1/query` and `POST /api/v2/query`.
+- **Browse** courses, sections, buildings, and rooms directly via paginated list endpoints.
+- **Visualize** the uploaded course data in the frontend: department average grades, grade trends over time per department, and grade-average vs. failure-rate per course.
 
-1. [Install git](https://git-scm.com/downloads) (v2.X). You should be able to execute `git --version` on the command line after installation is complete.
+## Tech stack
 
-1. [Install Node (Current)](https://nodejs.org/en/download/) (Current: v24.X), which will also install NPM (you should be able to execute `node --version` and `npm --version` on the command line).
+| | |
+|---|---|
+| Backend | Node.js, TypeScript, Express 5 |
+| Frontend | React 18, TypeScript, Vite |
+| Charts | Chart.js via react-chartjs-2 |
+| Parsing | JSZip (course archives), parse5 (facilities HTML), decimal.js (precision-safe averaging) |
+| Testing | Mocha, Chai, Supertest, nyc (coverage) |
+| CI | GitHub Actions (typecheck, prettier, tests, frontend build) |
 
-1. [Install Yarn](https://yarnpkg.com/en/docs/install) (1.22.X). You should be able to execute `yarn --version`.
+Data is persisted as JSON files on disk (no external database) — a deliberate simplification for the project's scope, not a production storage choice.
 
-1. Clone your repository by running `git clone REPO_URL` from the command line. You can get the REPO_URL by clicking on the green button on your project repository page on GitHub. Note that due to new department changes you can no longer access private git resources using https and a username and password. You will need to use either [an access token](https://help.github.com/en/github/authenticating-to-github/creating-a-personal-access-token-for-the-command-line) or [SSH](https://help.github.com/en/github/authenticating-to-github/adding-a-new-ssh-key-to-your-github-account).
+## Architecture
 
-## Project commands
+```
+src/
+  index.ts                       entry point, reads PORT / DATA_DIR
+  App.ts                         Express app: routes, query-DSL parser/evaluator, geolocation lookup
+  controllers/                   dataset upload / job-status handlers
+  services/datasets.ts           background parsing jobs (course zips, facilities zips)
+  repositories/jobRepository.ts  in-memory job-status store
+  middleware/                    pagination parsing, JSON-body validation, error handling
+  models/errors.ts               typed domain errors -> HTTP status mapping
 
-Once your environment is configured you need to further prepare the project's tooling and dependencies.
+frontend/src/
+  api.ts, types.ts               typed client for the backend REST API
+  hooks/                         useCourseExplorer, useInsights — data fetching + derived state
+  components/                    UploadPanel, FiltersPanel, ResultsTable
+  insights/                      the three Chart.js insight panels
+  legacy-vanilla/                original (pre-rewrite) vanilla JS/HTML/CSS frontend, kept for reference
+```
 
-In a terminal, navigate to your project directory (where you cloned this repo) and run:
+## Running locally
 
-1. `yarn install` to download the packages specified in your project's *package.json* to the *node_modules* directory. You should only need to run this command once after cloning your repo.
-
-1. `yarn build` to compile your project and check for formatting issues. You must run this command after making changes to your TypeScript files. If your project does not compile, or has formatting issues, it will not be accepted by AutoTest. Most formatting issues can be fixed automatically by running `yarn prettier:fix`.
-
-1. `yarn test` to run the test suite.
-    - To also generate a coverage report, run `yarn cover`.
-
-Optional: enable linting by removing the `.disabled` extension from the `eslint.config.mjs.disabled` filename, and using the `yarn build:lint` command instead of the `yarn build` command. The `yarn lint:check` command will inform you of lint errors in your code, some of which you may be able to automatically fix using the `yarn lint:fix` command.
-
-If you are curious, some of these commands are actually shortcuts defined in [package.json -> scripts](./package.json).
-
-## Running and testing from an IDE
-
-IntelliJ Ultimate should be automatically configured the first time you open the project (IntelliJ Ultimate is a free download through the [JetBrains student program](https://www.jetbrains.com/community/education/#students/)).
-
-### License
-
-Licensing terms are specified in [LICENSE](LICENSE).
-
-
-## Checkpoint 1 – Course Explorer Frontend
-
-### Running the frontend (TA demo)
-
-From the `frontend/` directory:
+Requires Node 24.x and Yarn 1.22.x.
 
 ```bash
+# backend
 yarn install
-yarn demo
+yarn build      # typecheck + prettier check
+yarn test       # mocha test suite
+yarn start      # serves the API and the built frontend on http://localhost:4321
+
+# frontend (separate terminal, for active frontend development)
+cd frontend
+yarn install
+yarn dev        # Vite dev server on :5173, proxies /api to :4321
 ```
 
----
+For a production-style run, build the frontend (`yarn build` inside `frontend/`) and start the backend (`yarn start` at the root) — it serves `frontend/dist` directly.
 
-## Checkpoint 2 - Data Insights Frontend
+### Try it with sample data
 
-We added a Data Insights section to the frontend that shows three charts built from the uploaded course data. All the data comes from the backend API so there's nothing to configure manually, as long as a dataset has already been uploaded the charts will just load on their own.
+Open the running frontend and click **Try Sample Data** in the upload panel — it uploads a bundled real UBC course/grade-distribution dataset ([`frontend/public/samples/courses-dataset.zip`](frontend/public/samples/courses-dataset.zip)) with no file picker needed, so you can immediately see courses/sections and the insight charts populate.
 
-### Running the frontend (TA demo)
+## Known limitation: facilities geolocation
 
-Start the backend from the project root:
+Facilities-dataset uploads (`/api/v2/datasets`) look up each building's coordinates via a UBC-internal geocoding service (`cs310.students.cs.ubc.ca`), which is only reachable from UBC's network. Outside that network, facilities uploads will fail to attach coordinates (and the related tests will fail for the same reason) — this is an environment dependency from the original course infrastructure, not a bug in this codebase. Course-dataset uploads and queries are unaffected.
 
-```bash
-yarn start
-```
+## Data insights
 
-Then open [http://localhost:4321](http://localhost:4321) in your browser. The Data Insights section is on the main page and loads automatically.
+The frontend's insights panel renders three charts, computed entirely from data already returned by the backend API.
 
----
+**Department average grades (bar chart).** Average grade per department, across all sections and years in the dataset, color-coded from red (lower) to blue (higher). Sortable alphabetically or by average, with a top-20/top-40/all view. Useful for spotting departments whose grading is a noticeable outlier relative to the rest of campus, without writing a query by hand.
 
-### Insight 1 - Department Average Grades (Bar Chart)
+**Grade trends over time (line chart).** Average grade for a selected department, by academic year (year-1900 summary rows are filtered out). Useful for seeing whether a department's grades are trending up, down, or had a sudden shift in a specific year worth investigating.
 
-This is a horizontal bar chart showing the average grade for each department, calculated across all sections and years in the dataset. The bars are color coded so lower averages show as more red and higher averages show as more blue. You can sort alphabetically or by average, and limit the view to the top 20, top 40, or all departments.
+**Grade average vs. failure rate (scatter chart).** Each course plotted by average grade (x) and failure rate (y), color-coded by failure rate, filterable by department and minimum enrollment. Average grade alone doesn't show how a course is actually going for students — a 75-average course with a 15% failure rate is a different situation than a 68-average course with almost none. This view is meant to help surface courses where targeted support would matter most.
 
-The reason this is useful is that department heads and administrators don't always have a clear picture of how their department's grades compare to others across campus. A department with consistently low averages might have a curriculum problem, a student support gap, or just stricter grading than average. A department with unusually high averages might be worth looking at for the opposite reason. This chart makes it easy to spot those outliers at a glance without having to run queries manually.
+## Origin & changes since the course
 
----
-
-### Insight 2 - Grade Trends Over Time (Line Chart)
-
-This chart shows how the average grade in a selected department has changed from year to year. You pick a department from the dropdown and the chart updates to show the full trend across all years in the dataset. We filter out year 1900 rows (which are just overall summary entries in the raw data) so only real academic years show up.
-
-This one is useful because a single year of data doesn't tell you much on its own. If you're an enrollment planner or curriculum lead you probably want to know whether grades in a department have been trending up or down over time, or whether there was a sudden drop in a specific year that might be worth investigating. This chart makes that kind of pattern immediately visible.
-
----
-
-### Insight 3 - Grade Average vs Failure Rate (Scatter Chart)
-
-Each dot on this chart is one course, plotted by its average grade on the X axis and its failure rate on the Y axis. The color goes from blue for low failure rates to red for high ones. You can filter by department and set a minimum enrollment cutoff so you're only looking at courses with enough students to be meaningful.
-
-The reason we built this is that average grade alone doesn't capture how a course is going for students. A course with a 75 average but a 15% failure rate is a very different situation from one with a 68 average and almost no failures. Student advisors can use this to figure out which courses are producing the most failures and direct support resources there before students fall too far behind.
+The backend (Express app, query-DSL parser/evaluator, dataset parsing, test suite) is the team project as submitted, with light polish afterward: wiring up a previously-unused pagination middleware onto the list endpoints, and fixing project metadata. The original vanilla JS/HTML/CSS frontend is kept under `frontend/legacy-vanilla/` for reference; the current frontend is a from-scratch React + TypeScript rewrite with the same features and API usage, done independently after the course concluded.

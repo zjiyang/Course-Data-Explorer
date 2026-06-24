@@ -1,10 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import {
-	NotFoundError,
-	ValidationError,
-	TooManyResultsError,
-	InvalidQueryError,
-} from "../models/errors";
+import { NotFoundError, ValidationError, TooManyResultsError, InvalidQueryError } from "../models/errors";
 
 export function parsePagination(req: Request, res: Response, next: NextFunction): void {
 	const limitRaw = req.query.limit;
@@ -41,12 +36,7 @@ export function requireJsonBody(req: Request, res: Response, next: NextFunction)
 	next();
 }
 
-export function handleErrors(
-	err: unknown,
-	_req: Request,
-	res: Response,
-	_next: NextFunction
-): void {
+export function handleErrors(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
 	if (err instanceof ValidationError) {
 		if (err.fields) {
 			res.status(422).send({ error: "Validation failed", fields: err.fields });
